@@ -38,7 +38,7 @@ function showAuth(auth){
   const target=$('auth-status');target.replaceChildren();
   if(!auth)return;
   const h=document.createElement('h3');h.textContent='인증 세션 상태';target.append(h);
-  const labels={locked:'잠김',unlocked:'잠금 해제됨',unauthenticated:'로그인 필요',unavailable:'확인 불가',unreachable:'연결 없음',empty:'키 없음','keys-present':'키 있음'};
+  const labels={'not-probed':'터미널에서 확인',locked:'잠김',unlocked:'잠금 해제됨',unauthenticated:'로그인 필요',unavailable:'확인 불가',unreachable:'연결 없음',empty:'키 없음','keys-present':'키 있음'};
   for(const text of ['Bitwarden: '+(labels[auth.vault]||auth.vault),'SSH agent: '+(labels[auth.agent]||auth.agent),'gh: '+auth.token,auth.scope,auth.expiry,'현재 터미널 세션 종료: bwe · 화면에서는 키 로드·잠금 해제·세션 종료를 실행하지 않습니다.']){const p=document.createElement('p');p.textContent=text;target.append(p)}
 }
 function showPlan(plan){

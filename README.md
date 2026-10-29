@@ -34,6 +34,7 @@ WSL에서는 Windows 브라우저로 해당 localhost 주소를 연다. 이 환�
 
 처음에는 선택 기능이 모두 꺼져 있다. 도구가 설치돼 있어도 자동 활성화하지 않는다.
 
+- Oh My Zsh: 설치 경로와 테마 (`robbyrussell` 또는 `agnoster`), git 플러그인
 - Git 폴더 프로필: 개인·회사 폴더, 커밋 이름·이메일, 선택할 공개키 경로
 - 추가 SSH 연결: 호스트 별칭·주소·사용자·공개키 경로
 - Bitwarden: 개인·회사 SSH 키 항목 이름·형식, 키 TTL (기본 1시간)
@@ -94,7 +95,7 @@ JSON의 키·필드 형식은 대시보드 API와 configure가 검증한다.
 Bitwarden 기능을 활성화하고 개인 키를 로드한 다음 비공개 설정을 가져온다.
 
 ```sh
-bw login  # 최초 1회
+bwl  # 최초 로그인 또는 로그인 만료 시
 bws personal
 git -c include.path="$HOME/.config/dotfiles/dashboard/personal.gitconfig" \
   clone git@github.com:doh0106/dotfiles-private.git "$HOME/personal/dotfiles-private"
@@ -139,7 +140,7 @@ python3 tests/auth.py       # 임시 키·agent와 모의 Bitwarden/gh 사용
 1. Git 프로필에서 개인 폴더와 이름·이메일·공개키를 설정한다. 회사도 쓰면 회사 프로필을 켜고
    겹치지 않는 회사 폴더와 회사 identity·공개키를 입력한다. linked worktree는 원본 Git 폴더를 따른다.
 2. Bitwarden에서 키 항목과 TTL을 입력하고, GitHub CLI를 켜면 토큰 항목도 입력한다.
-3. 저장 → configure → 새 zsh → bw login(최초) → bws personal 순서로 진행한다.
+3. 저장 → configure → 새 zsh → bwl(최초 또는 로그인 만료 시) → bws personal 순서로 진행한다.
 4. 해당 폴더의 저장소에서 bws·git·gh를 사용한다. 다른 프로필로 이동하면 다음 gh 호출부터
    그 프로필 토큰을 선택한다. -R 옵션만으로는 프로필이 바뀌지 않는다.
 5. 작업 후 bwe로 이 셸이 추가한 키·세션을 정리한다. 기존 agent·기존 키는 보존한다.
@@ -158,3 +159,28 @@ Git Credential Manager나 gh auth login/setup-git을 구성할 필요가 없다.
 대시보드의 vault·agent 상태는 **서버 프로세스 기준**이며 다른 터미널 상태와 다를 수 있다.
 현재 셸에서의 확인은 ssh-add -l, git config --get dotfiles.profile, verify.sh --session을 사용한다.
 암호화된 Bitwarden 캐시·일반 설정·공개키는 디스크에 남으며, 이는 로컬 무흔적 구성이 아니다.
+
+## Bitwarden 오류와 기존 테마 복구
+
+`invalid_grant`는 CLI 로그인/갱신 상태 문제일 수 있다. `bwu`는 CLI 상태 읽기 실패를
+인식하면 키 로드나 gh 실행으로 진행하지 않고 복구 안내를 낸다.
+
+```sh
+unset BW_SESSION
+bwl              # raw 세션 출력은 셸 변수로만 받고 화면에 표시하지 않음
+bws personal
+```
+
+이미 로그인되어 있는데 invalid_grant가 반복되면 `bw logout` 후 `bwl`로 재로그인한다.
+인증과 2FA는 사용자가 직접 한다. 캐시 파일을 자동 삭제하거나 버전을 임의로 내리지 않는다.
+대시보드는 Bitwarden 로그인과의 동시 접근을 피하려고 이제 bw status를 자동 실행하지 않는다.
+현재 vault 상태는 터미널의 bwu/bw status로 확인한다.
+
+기존 Oh My Zsh가 설치되어 있어도 선택 기능이 꺼져 있으면 테마를 읽지 않는다.
+화면의 Oh My Zsh를 켜고 설치 경로·테마를 확인한 뒤 저장·configure한다.
+기존 robbyrussell 테마와 git 플러그인은 이 기능으로 복원할 수 있다.
+설치는 자동 실행하지 않는다.
+
+SSH 공통 Include 파일은 WSL의 /mnt/c 권한 차이로 OpenSSH 검사가 실패하지 않도록
+~/.ssh/config.d/dotfiles.conf에 600 권한으로 복사한다. Git pull로 원본이 바뀌면 configure를
+다시 실행해서 이 사본도 갱신한다.

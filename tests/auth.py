@@ -27,7 +27,11 @@ with tempfile.TemporaryDirectory(prefix='dotfiles-auth-') as temporary:
 import sys,os,json
 from pathlib import Path
 args=sys.argv[1:];d=Path(os.environ['FIXTURES'])
-if args==['status']:print('{"status":"unlocked"}')
+if args==['status']:
+ if os.environ.get('FAKE_BW_BAD_STATUS'):
+  print('fixture-sensitive-status',file=sys.stderr);sys.exit(1)
+ print(json.dumps({'status':os.environ.get('FAKE_BW_STATE','unlocked')}))
+elif args==['login','--raw']:print('fixture-login-session')
 elif args==['lock']:pass
 elif args==['sync']:pass
 elif args[:2]==['get','notes']:
@@ -78,6 +82,12 @@ m.generate(s)
     run(['git','worktree','add','-q','-b','linked',linked],env,cwd=personal)
     assert run(['git','config','--get','dotfiles.profile'],env,cwd=linked).stdout.strip()=='personal'
     assert run(['python3',REPO/'bin/auth.py','gh','pr','list'],env,cwd=linked).returncode==0
+    login=run(['zsh','-c','source "$HOME/.zshrc"; bwl && [[ "$BW_SESSION" == fixture-login-session ]]'],env)
+    assert 'fixture-login-session' not in login.stdout and 'fixture-login-session' not in login.stderr
+    bad=run(['zsh','-c','source "$HOME/.zshrc"; bwu'],dict(env,FAKE_BW_BAD_STATUS='1'),False)
+    assert bad.returncode!=0 and 'fixture-sensitive-status' not in bad.stderr and 'bwl' in bad.stderr
+    missing=run(['zsh','-c','source "$HOME/.zshrc"; bwu'],dict(env,FAKE_BW_STATE='unauthenticated'),False)
+    assert missing.returncode!=0 and 'bwl' in missing.stderr
     # Set up a shared agent with an unrelated pre-existing key.
     agent=run(['ssh-agent','-s'],env).stdout
     sock=re.search(r'SSH_AUTH_SOCK=([^;]+)',agent).group(1);pid=re.search(r'SSH_AGENT_PID=(\d+)',agent).group(1)

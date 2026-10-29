@@ -11,16 +11,32 @@ bwu() {
     print -u2 'Install bw and jq first.'; return 1
   }
   local vault_status session
-  vault_status="$(bw status | jq -er '.status')" || return 1
+  vault_status="$(python3 "$(_dotfiles_auth_script)" vault-status)" || return 1
   case "$vault_status" in
     unlocked) return 0 ;;
-    unauthenticated) print -u2 'Run bw login first.'; return 1 ;;
+    unauthenticated) print -u2 'Bitwarden 로그인이 필요합니다. bwl로 로그인한 뒤 다시 실행하세요.'; return 1 ;;
     locked)
       session="$(bw unlock --raw)" || return 1
       [[ -n "$session" ]] || return 1
       export BW_SESSION="$session" ;;
     *) print -u2 'Unexpected Bitwarden status.'; return 1 ;;
   esac
+}
+
+# Capture the raw session instead of printing the session key in terminal output.
+bwl() {
+  local session
+  unset BW_SESSION
+  session="$(command bw login --raw)" || {
+    unset session
+    print -u2 'Bitwarden 로그인 실패. 계속 invalid_grant가 나오면 bw logout 후 bwl을 다시 실행하세요.'
+    return 1
+  }
+  if [[ -n "$session" ]]; then
+    export BW_SESSION="$session"
+  fi
+  unset session
+  bwu
 }
 
 bws() {

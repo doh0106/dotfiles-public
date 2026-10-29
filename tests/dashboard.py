@@ -22,6 +22,9 @@ with tempfile.TemporaryDirectory(prefix='dashboard-test-') as directory:
         snap=request('api/state');assert all(not f['enabled'] for f in snap['features'])
         assert not (home/'.config/dotfiles').exists(),'opening dashboard must not install settings'
         state={f['id']:{'enabled':False,'values':{x['key']:x['value'] for x in f['fields']}} for f in snap['features']}
+        framework=home/'.oh-my-zsh';framework.mkdir()
+        (framework/'oh-my-zsh.sh').write_text('export OMZ_LOADED=yes\nPROMPT="framework> "\n')
+        state['ohmyzsh']['enabled']=True
         state['git']['enabled']=True;state['git']['values'].update(name='Example Developer',email='dev@example.com')
         state['zellij']['enabled']=True;state['zellij']['values']['session']='example'
         state['ssh']['enabled']=True;state['ssh']['values'].update(host='example.org',user='developer')
@@ -61,7 +64,7 @@ with tempfile.TemporaryDirectory(prefix='dashboard-test-') as directory:
         assert email=='dev@example.com'
         assert (home/'.config/zellij/config.kdl').is_symlink()
         assert not (home/'.config/yazi/yazi.toml').exists()
-        result=subprocess.check_output(['zsh','-c','source "$HOME/.zshrc"; print -r -- "$DOTFILES_ZELLIJ_SESSION"; (( ${+functions[zj]} )) && (( ! ${+functions[bws]} ))'],env=env,text=True)
+        result=subprocess.check_output(['zsh','-c','source "$HOME/.zshrc"; [[ "$OMZ_LOADED" == yes && "$ZSH_THEME" == robbyrussell ]] || exit 8; print -r -- "$DOTFILES_ZELLIJ_SESSION"; (( ${+functions[zj]} )) && (( ! ${+functions[bws]} ))'],env=env,text=True)
         assert result.strip()=='example'
         # Reconfigure an already-enabled feature and then disable it without reinstalling.
         state['zellij']['values']['session']='updated';request('api/settings',state)

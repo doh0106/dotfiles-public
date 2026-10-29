@@ -24,6 +24,7 @@ def field(key, label, value='', **kw):
     return dict(key=key, label=label, value=value, **kw)
 
 DEFINITIONS = [
+ dict(id='ohmyzsh',name='Oh My Zsh',category='shell',icon='›_',command=None,desc='설치된 Oh My Zsh의 테마와 git 플러그인을 읽습니다.',fields=[field('dir','Oh My Zsh 경로','~/.oh-my-zsh'),field('theme','테마','robbyrussell',options=['robbyrussell','agnoster'])]),
  dict(id='git', name='Git 폴더 프로필', category='access', icon='git', command='git', desc='gitdir로 개인·회사 폴더의 커밋 계정과 SSH 키를 선택합니다.', fields=[field('personal_dir','개인 저장소 폴더','~/personal/'),field('name','개인 커밋 이름'),field('email','개인 커밋 이메일',type='email'),field('personal_key','개인 공개키 경로','~/.ssh/keys/github-personal.pub'),field('work_mode','회사 프로필 사용','off',options=['off','on']),field('work_dir','회사 저장소 폴더','~/work/'),field('work_name','회사 커밋 이름'),field('work_email','회사 커밋 이메일',type='email'),field('work_key','회사 공개키 경로','~/.config/dotfiles/private/ssh/keys/github-work.pub')]),
  dict(id='ssh', name='SSH 연결', category='access', icon='↗', command='ssh', desc='추가 서버 연결 설정입니다. Git 계정 선택은 폴더 프로필에서 관리합니다.',fields=[field('alias','호스트 별칭','workstation'),field('host','호스트 주소'),field('user','로그인 사용자'),field('key','공개키 경로','~/.ssh/keys/workstation.pub')]),
  dict(id='bitwarden', name='Bitwarden · SSH 세션', category='secret', icon='◇', command='bw', desc='프로필 키를 RAM에 로드하고 만료 시간·세션 정리를 관리합니다.',fields=[field('item','개인 키 Bitwarden 항목','personal-github-ssh-key'),field('type','개인 키 형식','note',options=['note','sshkey']),field('work_item','회사 키 Bitwarden 항목'),field('work_type','회사 키 형식','note',options=['note','sshkey']),field('lifetime','키 유효시간 (초)','3600',type='number',hint='60~86400초. 기존 agent에 이미 있던 키는 변경하지 않습니다.')]),
@@ -50,6 +51,7 @@ def load():
             for name,value in item['values'].items():
                 if name in migrated[key]['values']: migrated[key]['values'][name]=value
         return migrated  # Saving/configure validates new dependencies after user review.
+    if 'ohmyzsh' not in raw:raw={'ohmyzsh':defaults()['ohmyzsh'],**raw}
     return validate(raw)
 
 def validate(raw):
@@ -109,6 +111,9 @@ def generate(state):
     validate(state)
     enabled=[k for k,v in state.items() if v['enabled']]
     runtime='_dotfiles_enabled=('+' '.join(shlex.quote(k) for k in enabled)+')\n'
+    if 'ohmyzsh' in enabled:
+        runtime+='export ZSH='+shlex.quote(str(Path(state['ohmyzsh']['values']['dir']).expanduser()))+'\n'
+        runtime+='ZSH_THEME='+shlex.quote(state['ohmyzsh']['values']['theme'])+'\n'
     v=state['nvm']['values']
     if 'nvm' in enabled:runtime+='export NVM_DIR='+shlex.quote(str(Path(v['dir']).expanduser()))+'\n'
     if 'zellij' in enabled:runtime+='export DOTFILES_ZELLIJ_SESSION='+shlex.quote(state['zellij']['values']['session'])+'\n'
@@ -149,6 +154,7 @@ def generate(state):
     write(SETTINGS,json.dumps(state,ensure_ascii=False,indent=2)+'\n')
 
 def installed(f,state):
+    if f['id']=='ohmyzsh':return (Path(state['ohmyzsh']['values']['dir']).expanduser()/'oh-my-zsh.sh').is_file()
     if f['id']=='nvm':return (Path(state['nvm']['values']['dir']).expanduser()/'nvm.sh').is_file()
     if f['id']=='colors':return True
     return shutil.which(f['command']) is not None
@@ -166,10 +172,10 @@ def plan(state):
             if darwin and shutil.which('brew') and f['id'] in brew:steps.append('command -v '+shlex.quote(f['command'])+' >/dev/null 2>&1 || brew install '+brew[f['id']])
             elif apt and f['id'] in ('git','ssh','zoxide'):
                 steps.append('command -v '+shlex.quote(f['command'])+' >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y '+packages[f['id']]+')')
-            else:steps.append({'bitwarden':'설치 안내: https://bitwarden.com/help/cli/','nvm':'설치 안내: https://github.com/nvm-sh/nvm#installing-and-updating','zellij':'설치 안내: https://zellij.dev/documentation/installation','gh':'설치 안내: https://github.com/cli/cli#installation','yazi':'설치 안내: https://yazi-rs.github.io/docs/installation/'}.get(f['id'],f['name']+' 설치 필요: OS 패키지 관리자로 준비하세요.'))
+            else:steps.append({'bitwarden':'설치 안내: https://bitwarden.com/help/cli/','nvm':'설치 안내: https://github.com/nvm-sh/nvm#installing-and-updating','zellij':'설치 안내: https://zellij.dev/documentation/installation','ohmyzsh':'설치 안내: https://github.com/ohmyzsh/ohmyzsh#basic-installation','gh':'설치 안내: https://github.com/cli/cli#installation','yazi':'설치 안내: https://yazi-rs.github.io/docs/installation/'}.get(f['id'],f['name']+' 설치 필요: OS 패키지 관리자로 준비하세요.'))
         if f['id']=='bitwarden':
             if not shutil.which('jq'):steps.append('jq 설치 필요: brew install jq (macOS) / sudo apt-get install jq (Debian·Ubuntu)')
-            post_configure+=['bw login  # 최초 1회; 사용자 인증','bws personal  # 저장소 밖에서는 프로필 명시, 안에서는 bws','bwe  # 사용 후: 이 셸이 추가한 키와 세션 정리']
+            post_configure+=['bwl  # 최초 로그인 또는 로그인 만료 시; 사용자 인증','bws personal  # 저장소 밖에서는 프로필 명시, 안에서는 bws','bwe  # 사용 후: 이 셸이 추가한 키와 세션 정리']
         if f['id']=='gh':post_configure+=['gh pr list  # 저장소 안: 폴더 프로필 토큰 사용','bwgh --profile personal repo list  # 저장소 밖: 명시적 프로필 사용']
         if f['id']=='git':
             steps+=['비공개 remote는 git@github.com:OWNER/REPO.git 형식을 사용하세요. 공개 HTTPS는 그대로 유지됩니다.','최초 비공개 clone: git -c include.path='+shlex.quote(str(DATA/'personal.gitconfig'))+' clone git@github.com:OWNER/REPO.git '+shlex.quote(str(Path(state['git']['values']['personal_dir']).expanduser()/'REPO'))]
@@ -200,12 +206,10 @@ def auth_status():
     def probe(args):
         try:return subprocess.run(args,capture_output=True,text=True,timeout=3)
         except (OSError,subprocess.TimeoutExpired):return None
-    bw=probe(['bw','status'])
-    try:vault=json.loads(bw.stdout)['status'] if bw and bw.returncode==0 else 'unavailable'
-    except (ValueError,KeyError):vault='unavailable'
+    vault='not-probed'  # Avoid concurrent Bitwarden cache/token refresh during interactive login.
     agent=probe(['ssh-add','-l'])
     agent_state='unreachable' if not agent or agent.returncode==2 else 'empty' if agent.returncode==1 else 'keys-present'
-    return dict(vault=vault,agent=agent_state,scope='대시보드 서버 프로세스 기준입니다. 다른 터미널의 BW_SESSION·agent 상태와 다를 수 있습니다.',token='명령 실행 시에만 로드 · 화면에서는 토큰을 읽지 않음',expiry='키 만료 잔여시간은 OpenSSH에서 조회할 수 없습니다. bws가 새로 추가한 키에 설정한 TTL을 적용합니다.')
+    return dict(vault=vault,agent=agent_state,scope='agent는 서버 프로세스 기준입니다. Bitwarden 로그인과의 동시 접근을 피하려고 화면에서는 bw status를 실행하지 않습니다. vault 상태는 터미널에서 확인하세요.',token='명령 실행 시에만 로드 · 화면에서는 토큰을 읽지 않음',expiry='키 만료 잔여시간은 OpenSSH에서 조회할 수 없습니다. bws가 새로 추가한 키에 설정한 TTL을 적용합니다.')
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass

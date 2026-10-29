@@ -76,15 +76,22 @@ def add(item, kind, lifetime, public_path=None):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['load','extras','gh','check']);parser.add_argument('--profile',choices=['personal','work']);parser.add_argument('arguments',nargs=argparse.REMAINDER);args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['load','extras','gh','check','vault-status']);parser.add_argument('--profile',choices=['personal','work']);parser.add_argument('arguments',nargs=argparse.REMAINDER);args=parser.parse_args()
     # REMAINDER captures options following action; parse the bridge's own prefix explicitly.
     rest=args.arguments
     explicit=args.profile
     if len(rest)>=2 and rest[0]=='--profile':explicit,rest=rest[1],rest[2:]
     if rest and rest[0]=='--':rest=rest[1:]
+    if args.action=='vault-status':
+        result=run(['bw','status'])
+        try:state=json.loads(result.stdout)['status']
+        except (ValueError,KeyError,TypeError):state=None
+        if result.returncode or state not in ('locked','unlocked','unauthenticated'):
+            raise RuntimeError('Bitwarden 로그인 상태를 읽지 못했습니다. 현재 셸에서 unset BW_SESSION 후 다시 시도하세요. invalid_grant가 반복되면 bw logout 후 bwl로 재로그인하세요.')
+        print(state);return
     config=configuration()
     if args.action in ('load','extras'):
-        if run(['bw','sync']).returncode:raise RuntimeError('Bitwarden 동기화 실패. 네트워크와 로그인 상태를 확인하세요.')
+        if run(['bw','sync']).returncode:raise RuntimeError('Bitwarden 동기화 실패. invalid_grant/로그인 만료라면 unset BW_SESSION → bw logout → bwl로 재로그인하세요. 네트워크 오류라면 연결을 확인하세요.')
     if args.action=='extras':
         path=Path.home()/'.config/dotfiles/private/secrets.json'
         try:items=json.loads(path.read_text())['secrets']

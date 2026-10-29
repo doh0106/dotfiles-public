@@ -53,12 +53,34 @@ def block(path, name, contents, prepend=False):
     path.write_text(new)
 
 
+def safe_ssh_copy(source, target):
+    # OpenSSH rejects a config reached through a group/world-writable checkout
+    # (e.g. WSL /mnt/c). Copy with controlled permissions instead of linking it.
+    import tempfile
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.parent.chmod(0o700)
+    content = source.read_text()
+    if target.is_file() and not target.is_symlink() and target.read_text() == content:
+        target.chmod(0o600)
+        return
+    if target.exists() or target.is_symlink():
+        target.rename(target.with_name(target.name + '.bak.' + datetime.now().strftime('%Y%m%d%H%M%S%f')))
+    descriptor, temporary = tempfile.mkstemp(dir=target.parent, prefix='.dotfiles-ssh-')
+    try:
+        with os.fdopen(descriptor, 'w') as output:
+            output.write(content)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def install(repo, mode):
     config.mkdir(parents=True, exist_ok=True)
     link(repo / 'links/zsh/dotfiles.zsh', config / 'shell.zsh')
     link(repo / 'links/zsh/zshrc', config / 'zshrc')
     block(home / '.zshrc', 'shell', 'source "$HOME/.config/dotfiles/zshrc"')
-    link(repo / 'links/ssh/config', home / '.ssh/config.d/dotfiles.conf')
+    safe_ssh_copy(repo / 'links/ssh/config', home / '.ssh/config.d/dotfiles.conf')
     for key in (repo / 'links/ssh/keys').glob('*.pub'):
         link(key, home / '.ssh/keys' / key.name)
     block(home / '.ssh/config', 'ssh', 'Include ~/.ssh/config.d/dotfiles.conf\nHost *', prepend=True)
