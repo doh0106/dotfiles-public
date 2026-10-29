@@ -44,7 +44,7 @@ _dotfiles_load_secrets() {
     [ -n "$value" ] || { echo "Empty secret: $name" >&2; failures=$((failures+1)); continue; }
     case "$action" in
       ssh-add)
-        printf '%s\n' "$value" | ssh-add - >/dev/null 2>&1 || { failures=$((failures+1)); unset value; continue; } ;;
+        printf '%s\n' "$value" | ssh-add -t "${DOTFILES_KEY_LIFETIME:-3600}" - >/dev/null 2>&1 || { failures=$((failures+1)); unset value; continue; } ;;
       write-file)
         dest=$(printf '%s' "$item" | jq -r '.dest')
         mode=$(printf '%s' "$item" | jq -r '.mode // "600"')

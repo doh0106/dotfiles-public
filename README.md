@@ -34,9 +34,10 @@ WSL에서는 Windows 브라우저로 해당 localhost 주소를 연다. 이 환�
 
 처음에는 선택 기능이 모두 꺼져 있다. 도구가 설치돼 있어도 자동 활성화하지 않는다.
 
-- Git identity: GitHub 소유자, 커밋 이름·이메일
+- Git 폴더 프로필: 개인·회사 폴더, 커밋 이름·이메일, 선택할 공개키 경로
 - 추가 SSH 연결: 호스트 별칭·주소·사용자·공개키 경로
-- Bitwarden: 개인 SSH 키 항목 이름·형식 (`note` 또는 `sshkey`)
+- Bitwarden: 개인·회사 SSH 키 항목 이름·형식, 키 TTL (기본 1시간)
+- GitHub CLI: 개인·회사 토큰의 Bitwarden 항목, 명령별 인증
 - zoxide: z 명령 활성화
 - Zellij: zj 명령과 기본 세션 이름 (빈 값이면 현재 폴더 이름)
 - 프로젝트 색상: 프로젝트 glob, Ghostty 색상·iTerm2 탭 색상
@@ -94,14 +95,16 @@ Bitwarden 기능을 활성화하고 개인 키를 로드한 다음 비공개 설
 
 ```sh
 bw login  # 최초 1회
-bws
-git clone git@github-personal:doh0106/dotfiles-private.git "$HOME/dotfiles-private"
-./bin/attach-private.sh "$HOME/dotfiles-private"
+bws personal
+git -c include.path="$HOME/.config/dotfiles/dashboard/personal.gitconfig" \
+  clone git@github.com:doh0106/dotfiles-private.git "$HOME/personal/dotfiles-private"
+./bin/attach-private.sh "$HOME/personal/dotfiles-private"
 exec zsh
-bws
+bws personal
 ```
 
-Git·SSH Include로 회사 설정을 읽고, bws는 개인 목록 다음에 비공개 secret 목록을 읽는다.
+Git·SSH Include로 추가 비공개 설정을 읽는다. 계정 선택은 대시보드의 gitdir 프로필이 담당한다.
+bws는 선택한 프로필의 키만 읽는다. 추가 서버 키는 `bws --extras`로 명시적으로 읽는다.
 비공개 shell.zsh는 공통 integration 전에 읽는다. 대시보드에서 활성화한 색상·nvm 등의
 로컬 옵션이 비공개 셸의 같은 변수를 덮어쓸 수 있다. 가장 마지막 기기별 설정은
 `~/.config/dotfiles/local.zsh`에 둔다.
@@ -112,7 +115,7 @@ Git·SSH Include로 회사 설정을 읽고, bws는 개인 목록 다음에 비�
 
 - 공개 HTTPS는 SSH로 강제 변환하지 않는다. 인증 없이 공개 저장소 업데이트가 가능하다.
 - `github-personal` SSH 별칭은 비공개 설정을 가져올 수 있도록 기본 제공한다.
-- Git의 st/co alias는 기본 제공한다. Git identity를 켠 경우에만 소유자별 identity와
+- Git의 st/co alias는 기본 제공한다. Git 폴더 프로필을 켠 경우에만 폴더별 identity·SSH 키와
   미분류 identity 차단을 적용한다. 끄면 기존 사용자 identity를 유지한다.
 - macOS 앱·open 기반 opener는 macOS 전용이다. Linux·WSL은 Yazi 기본 opener를 사용한다.
 - 선택 도구의 설치·OS 런타임·프로젝트 의존성 전체를 자동 관리하지 않는다.
@@ -124,8 +127,34 @@ Git·SSH Include로 회사 설정을 읽고, bws는 개인 목록 다음에 비�
 ```sh
 python3 tests/smoke.py
 python3 tests/dashboard.py
+python3 tests/auth.py       # 임시 키·agent와 모의 Bitwarden/gh 사용
 ./bin/verify.sh
-./bin/verify.sh --session  # Bitwarden과 개인 agent key까지 확인
+./bin/verify.sh --session personal  # Bitwarden과 선택 프로필 키 확인
 ```
 
 앞의 두 테스트는 임시 홈에서 실행한다. 실제 Bitwarden·원격 SSH·macOS GUI는 별도 확인이 필요하다.
+
+## Git·gh 인증과 세션 수명
+
+1. Git 프로필에서 개인 폴더와 이름·이메일·공개키를 설정한다. 회사도 쓰면 회사 프로필을 켜고
+   겹치지 않는 회사 폴더와 회사 identity·공개키를 입력한다. linked worktree는 원본 Git 폴더를 따른다.
+2. Bitwarden에서 키 항목과 TTL을 입력하고, GitHub CLI를 켜면 토큰 항목도 입력한다.
+3. 저장 → configure → 새 zsh → bw login(최초) → bws personal 순서로 진행한다.
+4. 해당 폴더의 저장소에서 bws·git·gh를 사용한다. 다른 프로필로 이동하면 다음 gh 호출부터
+   그 프로필 토큰을 선택한다. -R 옵션만으로는 프로필이 바뀌지 않는다.
+5. 작업 후 bwe로 이 셸이 추가한 키·세션을 정리한다. 기존 agent·기존 키는 보존한다.
+
+bws로 새로 추가한 키는 TTL 뒤 자동 제거된다. 터미널 종료만으로 agent 종료를 보장하지 않는다.
+GitHub 토큰은 셸 전체에 export하지 않고 gh 자식 프로세스에만 전달한다. 이 인증을 쓰면
+Git Credential Manager나 gh auth login/setup-git을 구성할 필요가 없다.
+초기 private clone과 저장소 밖의 gh 작업에는 프로필을 명시한다.
+상세 명령은 [인증 흐름](docs/authentication.md), [Bitwarden 운영](docs/bitwarden.md)을 참고한다.
+
+기존 owner 기반 저장 설정은 화면에서 새 기본 폴더와 함께 불러온다. 폴더·공개키를 확인하고
+다시 저장·configure한다. 기존 개인·회사 폴더를 자동 이동하지 않는다. 과거 원본 dotfiles의
+전역 include나 private git/config에 있던 owner 기반 insteadOf·identity 규칙은 직접 제거해야
+중복 적용을 피할 수 있다. 이번 dotfiles-private 사본에서는 해당 규칙을 제거했다.
+
+대시보드의 vault·agent 상태는 **서버 프로세스 기준**이며 다른 터미널 상태와 다를 수 있다.
+현재 셸에서의 확인은 ssh-add -l, git config --get dotfiles.profile, verify.sh --session을 사용한다.
+암호화된 Bitwarden 캐시·일반 설정·공개키는 디스크에 남으며, 이는 로컬 무흔적 구성이 아니다.

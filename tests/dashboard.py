@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix='dashboard-test-') as directory:
         # First-install authentication must follow configure and a fresh shell.
         state['bitwarden']['enabled']=True
         saved=request('api/settings',state)
-        bitwarden=next(row for row in saved['plan']['features'] if row['name']=='Bitwarden')
+        bitwarden=next(row for row in saved['plan']['features'] if row['name']=='Bitwarden · SSH 세션')
         assert not any(line.startswith(('bws','bw login')) for line in bitwarden['steps'])
         assert any(line.startswith('bws') for line in saved['plan']['post_configure'])
         state['bitwarden']['enabled']=False
@@ -44,11 +44,20 @@ with tempfile.TemporaryDirectory(prefix='dashboard-test-') as directory:
         for bad in [dict(state,bad={}),dict(state,ssh={'enabled':True,'values':dict(state['ssh']['values'],host='example.org\nProxyCommand evil')})]:
             try:request('api/settings',bad);raise AssertionError('invalid configuration accepted')
             except urllib.error.HTTPError as exc:assert exc.code==400
+        # Folder overlaps and gh without its prerequisites must fail before writing.
+        import copy
+        overlap=copy.deepcopy(state);overlap['git']['values'].update(work_mode='on',work_dir=str(home/'personal/nested'),work_name='Work',work_email='work@example.com')
+        no_vault=copy.deepcopy(state);no_vault['gh']['enabled']=True
+        for bad in (overlap,no_vault):
+            try:request('api/settings',bad);raise AssertionError('invalid profile dependency accepted')
+            except urllib.error.HTTPError as exc:assert exc.code==400
         try:request('api/settings',state,'https://example.com');raise AssertionError('foreign Origin accepted')
         except urllib.error.HTTPError as exc:assert exc.code==403
         subprocess.run(['git','config','--global','user.email','existing@example.com'],env=env,check=True)
         subprocess.run(['python3',str(repo/'bin/dashboard.py'),'configure'],env=env,check=True,stdout=subprocess.DEVNULL)
-        email=subprocess.check_output(['git','-C','/tmp','-c','remote.origin.url=https://github.com/doh0106/example.git','config','--get','user.email'],env=env,text=True).strip()
+        personal=home/'personal/example';personal.mkdir(parents=True)
+        subprocess.run(['git','init','-q',str(personal)],env=env,check=True)
+        email=subprocess.check_output(['git','-C',str(personal),'-c','remote.origin.url=https://github.com/doh0106/example.git','config','--get','user.email'],env=env,text=True).strip()
         assert email=='dev@example.com'
         assert (home/'.config/zellij/config.kdl').is_symlink()
         assert not (home/'.config/yazi/yazi.toml').exists()
@@ -64,8 +73,14 @@ with tempfile.TemporaryDirectory(prefix='dashboard-test-') as directory:
         subprocess.run(['zsh','-c','source "$HOME/.zshrc"; (( ! ${+functions[zj]} ))'],env=env,check=True)
         state['git']['enabled']=False;request('api/settings',state)
         subprocess.run(['python3',str(repo/'bin/dashboard.py'),'configure'],env=env,check=True,stdout=subprocess.DEVNULL)
-        existing=subprocess.check_output(['git','-C','/tmp','-c','remote.origin.url=https://github.com/doh0106/example.git','config','--get','user.email'],env=env,text=True).strip()
+        existing=subprocess.check_output(['git','-C',str(personal),'-c','remote.origin.url=https://github.com/doh0106/example.git','config','--get','user.email'],env=env,text=True).strip()
         assert existing=='existing@example.com','disabled Git feature must preserve existing identity'
+        legacy=copy.deepcopy(state);legacy.pop('gh');legacy['git']['values']={'owner':'sample-user','name':'Old Name','email':'old@example.com'}
+        legacy['bitwarden']={'enabled':True,'values':{'item':'old-item','type':'note'}}
+        (data/'settings.json').write_text(json.dumps(legacy))
+        migrated=request('api/state')
+        assert migrated['migration_notice'] and any(f['id']=='gh' for f in migrated['features'])
+        assert next(f for f in migrated['features'] if f['id']=='bitwarden')['enabled']
         print('PASS: defaults off; HTTP save; local file permissions; configure; feature update/disable; installation detection; input and origin validation')
     finally:
         process.terminate();process.communicate(timeout=5)
