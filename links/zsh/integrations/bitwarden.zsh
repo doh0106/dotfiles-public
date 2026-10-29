@@ -34,7 +34,7 @@ bws() {
   ssh-add -l >/dev/null 2>&1
   agent_result=$?
   if (( agent_result == 2 )); then
-    eval "$(ssh-agent -s)" >/dev/null || return 1
+    eval "$(env -u BW_SESSION -u GH_TOKEN -u GITHUB_TOKEN -u BW_PASSWORD -u BW_CLIENTSECRET -u BW_CLIENTID ssh-agent -s)" >/dev/null || return 1
     _dotfiles_owned_agents[$SSH_AUTH_SOCK]="$SSH_AGENT_PID"
   elif (( agent_result > 2 )); then
     return "$agent_result"

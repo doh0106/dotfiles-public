@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -41,6 +42,14 @@ import os,sys,json
 from pathlib import Path
 with (Path(os.environ['FIXTURES'])/'gh-log').open('a') as f:f.write(json.dumps({'token':os.environ.get('GH_TOKEN'),'args':sys.argv[1:],'vault_session':os.environ.get('BW_SESSION')})+'\\n')
 sys.exit(7 if sys.argv[1:]==['fail'] else 0)
+''')
+    agent_binary=shutil.which('ssh-agent')
+    (mocks/'ssh-agent').write_text('''#!/usr/bin/env python3
+import os,sys,json
+from pathlib import Path
+if '-s' in sys.argv:
+ with (Path(os.environ['FIXTURES'])/'agent-env-log').open('a') as f:f.write(json.dumps({'vault':'BW_SESSION' in os.environ,'github':'GH_TOKEN' in os.environ})+'\\n')
+os.execv('''+repr(agent_binary)+''', ['''+repr(agent_binary)+''',*sys.argv[1:]])
 ''')
     for f in mocks.iterdir():f.chmod(0o755)
     env['PATH']=str(mocks)+':'+env['PATH']
@@ -116,7 +125,17 @@ bwe || exit 9
         assert len(run(['ssh-add','-L'],shared).stdout.splitlines())==2
     finally:run(['ssh-agent','-k'],shared,False)
     # A shell-created empty agent is stopped on cleanup.
-    result=run(['zsh','-c','source "$HOME/.zshrc"; bws personal || exit 1; own_pid=$SSH_AGENT_PID; bwe || exit 2; [[ -z "${SSH_AUTH_SOCK:-}" ]]; ! kill -0 "$own_pid" 2>/dev/null'],env)
+    owned_script='''source "$HOME/.zshrc"
+export BW_SESSION=fixture-session GH_TOKEN=ambient
+bws personal || exit 1
+own_pid=$SSH_AGENT_PID
+bwe || exit 2
+[[ -z "${SSH_AUTH_SOCK:-}" ]]
+! kill -0 "$own_pid" 2>/dev/null
+'''
+    result=run(['zsh','-c',owned_script],env)
+    startup=json.loads((fixtures/'agent-env-log').read_text().splitlines()[-1])
+    assert startup=={'vault':False,'github':False},'agent must not inherit vault or gh session credentials'
     # No secret material is persisted by the implementation (only our fixtures contain secrets).
     for p in (home/'.config/dotfiles').rglob('*'):
         if p.is_file():
