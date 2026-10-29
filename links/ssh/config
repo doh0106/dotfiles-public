@@ -1,4 +1,5 @@
 # Specific private hosts precede defaults (OpenSSH uses the first obtained value).
+Include ~/.config/dotfiles/dashboard/ssh.config
 Include ~/.config/dotfiles/private/ssh/config
 Host github-personal
     HostName github.com

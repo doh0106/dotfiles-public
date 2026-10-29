@@ -75,12 +75,22 @@ def install(repo, mode):
         subprocess.run(['git', 'config', '--global', '--add', 'include.path', include], check=True)
     if mode == 'container':
         return
-    for name in ('config.kdl',):
-        link(repo / 'links/terminal/zellij' / name, home / '.config/zellij' / name)
+    import json
+    settings = config / 'dashboard/settings.json'
+    enabled = json.loads(settings.read_text()) if settings.exists() else {}
+    def optional_link(feature, source, target):
+        if enabled.get(feature, {}).get('enabled', False):
+            link(source, target)
+        elif target.is_symlink() and target.resolve() == source.resolve():
+            target.unlink()
+            backups = sorted(target.parent.glob(target.name + '.bak.*'))
+            if backups:
+                backups[-1].rename(target)
+    optional_link('zellij', repo / 'links/terminal/zellij/config.kdl', home / '.config/zellij/config.kdl')
     for name in ('keymap.toml', 'yazi.toml'):
-        link(repo / 'links/yazi' / name, home / '.config/yazi' / name)
+        optional_link('yazi', repo / 'links/yazi' / name, home / '.config/yazi' / name)
     if sys.platform == 'darwin':
-        link(repo / 'links/apps/Yazi.app', home / 'Applications/Yazi.app')
+        optional_link('yazi', repo / 'links/apps/Yazi.app', home / 'Applications/Yazi.app')
     # Color UI edits local data, never tracked paths in the public repository.
     for name, source in [('ghostty.conf', 'ghostty/project-colors.conf'), ('iterm.conf', 'iterm2/tab-colors.conf')]:
         target = config / 'terminal' / name

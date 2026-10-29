@@ -1,14 +1,8 @@
-# Optional interactive shell framework; no installation or network request at startup.
-export ZSH="$HOME/.oh-my-zsh"
-ZSH_THEME="robbyrussell"
-plugins=(git)
-if [ -r "$ZSH/oh-my-zsh.sh" ]; then
-  source "$ZSH/oh-my-zsh.sh"
-fi
-source "$HOME/.config/dotfiles/shell.zsh"
+# Optional features are selected in the dashboard.
 if [ -r "$HOME/.config/dotfiles/private/shell.zsh" ]; then
   source "$HOME/.config/dotfiles/private/shell.zsh"
 fi
+source "$HOME/.config/dotfiles/shell.zsh"
 if [ -r "$HOME/.config/dotfiles/local.zsh" ]; then
   source "$HOME/.config/dotfiles/local.zsh"
 fi

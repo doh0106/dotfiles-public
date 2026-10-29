@@ -15,4 +15,4 @@ chmod 700 "$HOME/.ssh"
 # One helper owns backups, managed blocks and private attachment for both platforms.
 python3 "$repo_dir/bin/configure.py" install "$repo_dir" "$mode"
 echo 'Settings installed. No secrets loaded.'
-echo 'Next: bw login; open zsh; bws; ./bin/verify.sh'
+echo 'Select features in the dashboard, then open a new zsh. Authentication is optional and manual.'

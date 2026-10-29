@@ -1,5 +1,10 @@
 # Bitwarden 운영
 
+먼저 대시보드에서 Bitwarden 기능을 활성화하고 설정 파일을 생성한 뒤 configure한다.
+대시보드를 사용하면 개인 키 항목은 `~/.config/dotfiles/dashboard/secrets.json`에서 읽는다.
+아래 `secrets.json` 설명은 로더 형식과 고급 수동 구성에 대한 설명이다.
+`DOTFILES_SECRETS_MANIFEST`를 지정하면 사용자 매니페스트 하나로 재정의할 수 있다.
+
 이 문서는 `secrets.json`에 Bitwarden 항목을 등록하고 `bin/load-secrets.sh`로 불러오는
 방법만 설명한다. 실제 private key, token, password 값은 Bitwarden에 저장하며 Git에
 커밋하지 않는다.

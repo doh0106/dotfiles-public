@@ -1,4 +1,4 @@
-export NVM_DIR="$HOME/.nvm"
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 if [ -r "$NVM_DIR/nvm.sh" ]; then
   source "$NVM_DIR/nvm.sh"
 fi

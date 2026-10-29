@@ -42,4 +42,4 @@ with tempfile.TemporaryDirectory(prefix='dotfiles-smoke-') as directory:
     run(['bash', repo / 'bin/attach-private.sh', overlay], env)
     assert run(['git', 'config', '--get', 'alias.overlay-check'], env).stdout.strip() == 'status'
     run(['zsh', '-c', 'source "$HOME/.zshrc"; [[ "$PRIVATE_OVERLAY_TEST" == loaded ]]'], env)
-    print('PASS: repeat installation, existing settings, public Git identity/HTTPS, private overlay')
+    print('PASS: repeat installation, existing settings, public HTTPS and identity blocking, private overlay')

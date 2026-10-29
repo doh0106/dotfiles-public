@@ -5,7 +5,7 @@ zj() {
     return 127
   }
 
-  local session_name="${1:-${PWD:t}}"
+  local session_name="${1:-${DOTFILES_ZELLIJ_SESSION:-${PWD:t}}}"
   session_name="${session_name//[^[:alnum:]_.-]/-}"
   [[ -n "$session_name" ]] || session_name='workspace'
 

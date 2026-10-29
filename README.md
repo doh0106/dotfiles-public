@@ -1,121 +1,128 @@
 # dotfiles
 
-macOS·Linux·WSL용 공통 사용자 설정. 인증 없이 가져와 기본 설정을 적용하고,
-Bitwarden에서 개인 SSH 키를 불러온 뒤 비공개 설정과 작업 저장소를 연결한다.
-Windows 네이티브 PowerShell 설정은 포함하지 않는다.
+공개 저장소를 가져와 로컬 대시보드에서 사용할 기능을 선택한다.
+대시보드는 설정 파일과 설치·적용 안내를 만들고, 사람 또는 AI가 안내대로 실행한다.
+도구 설치와 인증은 대시보드가 대신 실행하지 않는다.
 
-## 새 기기에서 시작
+## 1. 가져오기
 
-Git이 없다면 OS 패키지 관리자로 설치한다. 또는 GitHub에서 ZIP을 내려받아 압축을 푼다.
-Python 3도 bootstrap 실행 전에 필요하다.
+Git이 있다면 공개 HTTPS 주소로 clone한다. Git이 없다면 GitHub에서 ZIP을 내려받아 풀어도 된다.
+아래 최종 URL은 새 공개 저장소를 배치한 뒤 사용할 주소다.
+기존 동명의 비공개 저장소는 먼저 이름을 바꾸거나 다른 공개 URL을 사용한다.
 
 ```sh
 git clone https://github.com/doh0106/dotfiles.git "$HOME/dotfiles"
 cd "$HOME/dotfiles"
-./bin/install-prerequisites.sh
-./bin/bootstrap.sh
-zsh
 ```
 
-이 URL은 공개 저장소 배치 후 사용하는 최종 주소다. 현재 GitHub에 같은 이름의
-비공개 저장소가 남아 있다면, 먼저 이름을 변경하거나 새 공개 주소를 사용해야 한다.
+## 2. 대시보드 실행
 
-사전 도구 설치기는 macOS에서 Homebrew, Debian/Ubuntu·WSL에서 apt를 사용한다.
-Linux의 Bitwarden CLI는 [공식 배포 안내](https://bitwarden.com/help/cli/)에 따라
-별도로 설치해야 한다. 다른 Linux 배포판도 필요한 명령을 직접 설치하면 된다.
-필요한 명령은 `git python3 zsh jq bw ssh ssh-add ssh-keygen`이다.
-
-bootstrap은 패키지를 설치하거나 비밀값을 가져오지 않는다. 기존 `.zshrc`와 SSH config에
-관리 블록을 추가하고 기존 내용을 유지한다. 변경 전 `.bak.<timestamp>`를 만든다.
-과거 dotfiles가 전체 파일을 심볼릭 링크로 연결한 경우에는 그 링크를 백업하고
-새 관리 파일을 만든다. 백업에 있던 기기별 설정은 `~/.config/dotfiles/local.zsh`로 옮긴다.
-기존 Git include 중 다른 checkout을 가리키는 항목은 전환 전에 직접 확인·제거한다.
-
-## 개인 키 로드
+Python 3만 있으면 시작할 수 있다. Python이 없으면 OS 패키지 관리자로 먼저 설치한다.
+Node.js, zsh, Bitwarden, 선택 기능의 설치는 화면을 열기 위한 사전 조건이 아니다.
 
 ```sh
-bw login  # 최초 1회, 인증은 직접 진행
-bws       # 필요할 때 unlock, 개인 키 로드
-ssh -T github-personal
+python3 bin/dashboard.py
 ```
 
-`secrets.json`의 `personal-github-ssh-key`는 Bitwarden Secure Note의 본문에 있는
-기존 개인 private key를 읽는다. Native SSH Key 항목을 쓴다면 `bw_type`을 `sshkey`로
-바꾼다. 실제 private key를 저장소에 복사하지 않는다.
+브라우저가 열리지 않으면 출력된 `http://127.0.0.1:포트/` 주소를 직접 연다.
+WSL에서는 Windows 브라우저로 해당 localhost 주소를 연다. 이 환경에서 localhost 전달이
+꺼져 있다면 WSL의 localhost 연결 설정을 확인한다. `file://`로 HTML만 열면 API가 동작하지 않는다.
+종료는 터미널에서 Ctrl-C. 로그인 시작이나 시스템 서비스 등록은 하지 않는다.
 
-사용 가능한 agent가 없으면 `bws`가 현재 셸용 agent를 시작한다. 이미 실행 중인 agent는
-재사용한다. 생성한 agent는 사용 후 `ssh-agent -k`로 종료할 수 있다.
-Bitwarden 잠금과 agent에서 키를 제거하는 것은 별도다 (`bw lock`, `ssh-add -d <public-key>`).
+## 3. 선택하고 설정 파일 생성
 
-공개 저장소의 HTTPS URL은 SSH로 자동 변환하지 않는다. 따라서 키를 로드하지 않아도
-이 공개 저장소를 clone/pull할 수 있다. 비공개 저장소는 SSH alias를 명시해 가져온다.
+처음에는 선택 기능이 모두 꺼져 있다. 도구가 설치돼 있어도 자동 활성화하지 않는다.
 
-공개 저장소에 push할 때만 SSH를 쓰려면 해당 checkout에서 다음처럼 설정한다.
+- Git identity: GitHub 소유자, 커밋 이름·이메일
+- 추가 SSH 연결: 호스트 별칭·주소·사용자·공개키 경로
+- Bitwarden: 개인 SSH 키 항목 이름·형식 (`note` 또는 `sshkey`)
+- zoxide: z 명령 활성화
+- Zellij: zj 명령과 기본 세션 이름 (빈 값이면 현재 폴더 이름)
+- 프로젝트 색상: 프로젝트 glob, Ghostty 색상·iTerm2 탭 색상
+- Yazi: y 명령과 기존 기본 탐색기 설정
+- nvm: 설치 경로
+
+설정은 저장 전 변경 내용을 미리 볼 수 있다. **설정 파일 생성**은
+`~/.config/dotfiles/dashboard/`에 기기별 JSON·Git·SSH·zsh·색상·secret 참조 파일을 만든다.
+개인키·토큰·비밀번호 값을 받는 입력란은 없다. 생성 파일은 600 권한이며 공개 저장소에 넣지 않는다.
+서버가 실행 중인 WSL/macOS/Linux의 명령 경로로 설치 여부를 판단한다.
+
+설치 여부와 활성화 여부는 별개다. 활성화 후에도 도구가 없으면 설치 안내를 따라야 한다.
+화면의 설치 상태 다시 확인 버튼으로 수동 설치 후 상태를 갱신할 수 있다.
+
+## 4. 사람 또는 AI가 안내 실행
+
+저장 후 화면 아래에 활성화한 기능의 안내가 나온다.
+
+- 이미 설치됐다면 설치 단계를 생략한다.
+- 알려진 패키지 관리자를 사용할 때는 존재 여부를 검사하는 설치 snippet을 제공한다.
+- 배포판마다 설치 방식이 다른 도구는 공식 설치 문서 링크를 제공한다.
+- 마지막 configure 명령으로 홈 설정과 선택 기능을 연결한다.
+- AI에게 전달할 안내 복사 버튼으로 작업 순서를 전달할 수 있다.
 
 ```sh
-git remote set-url --push origin git@github-personal:doh0106/dotfiles.git
+python3 bin/dashboard.py configure
 ```
 
-## 비공개 설정 연결
+이 명령도 도구 설치·vault unlock·원격 접속은 하지 않는다. Git과 Bash가 필요하며,
+실제 셸 기능을 사용하려면 zsh를 설치해야 한다. 기존 zsh·SSH 설정은 백업하고 관리 블록을 추가한다.
+새 zsh에서 선택한 기능을 읽는다. 기존 셸의 함수·alias는 새 셸을 열기 전까지 남는다.
 
-공개 저장소에는 회사 계정, 서버 주소, 회사 public key, 업무 프로젝트 경로를 두지 않는다.
-이 데이터만 비공개 `dotfiles-private`에 둔다. 공통 스크립트를 복사하지 않는다.
+## 5. 이후에는 설정만 변경
+
+대시보드에서 변경 후 설정 파일을 다시 생성하고 안내의 configure를 실행한다.
+도구가 이미 있으면 재설치 안내를 만들지 않는다. 선택 해제한 zsh integration은 새 셸에서 읽지 않는다.
+Yazi·Zellij의 관리 링크는 configure 시 선택 상태에 따라 추가·제거한다.
+과거 사용자 파일을 백업했다면 기능 해제 시 그 백업을 복원한다. 도구 자체는 삭제하지 않는다.
+이미 실행 중인 프로그램이나 이미 agent에 로드된 키는 종료·제거하지 않는다.
+
+화면 없이도 동일한 저장 설정과 안내를 읽을 수 있다.
 
 ```sh
+python3 bin/dashboard.py plan
+```
+
+AI가 설정을 변경할 때도 같은 `dashboard/settings.json` 형식을 사용하고 configure를 실행하면 된다.
+JSON의 키·필드 형식은 대시보드 API와 configure가 검증한다.
+
+## 비공개 회사 설정
+
+공통 코드를 복사하지 않고 별도 `dotfiles-private` 디렉터리를 선택적으로 연결한다.
+Bitwarden 기능을 활성화하고 개인 키를 로드한 다음 비공개 설정을 가져온다.
+
+```sh
+bw login  # 최초 1회
+bws
 git clone git@github-personal:doh0106/dotfiles-private.git "$HOME/dotfiles-private"
-"$HOME/dotfiles/bin/attach-private.sh" "$HOME/dotfiles-private"
+./bin/attach-private.sh "$HOME/dotfiles-private"
 exec zsh
 bws
 ```
 
-위 비공개 저장소 주소는 해당 저장소를 GitHub에 만든 뒤 사용할 주소다.
-로컬 사본으로 시작한다면 clone 없이 `attach-private.sh`에 그 경로를 전달한다.
-연결기는 디렉터리를 `~/.config/dotfiles/private`에 심볼릭 링크로 연결할 뿐이며
-스크립트를 실행하거나 인증하지 않는다. 새 zsh를 열면 해당 셸 설정이 로드된다.
+Git·SSH Include로 회사 설정을 읽고, bws는 개인 목록 다음에 비공개 secret 목록을 읽는다.
+비공개 shell.zsh는 공통 integration 전에 읽는다. 대시보드에서 활성화한 색상·nvm 등의
+로컬 옵션이 비공개 셸의 같은 변수를 덮어쓸 수 있다. 가장 마지막 기기별 설정은
+`~/.config/dotfiles/local.zsh`에 둔다.
+비공개 overlay의 기존 Git·SSH·셸 설정은 대시보드에서 편집하거나 끄지 않는다.
+연결 해제는 `~/.config/dotfiles/private` 심볼릭 링크를 제거한 뒤 새 셸을 여는 방식이다.
 
-| 경로 (비공개 저장소 기준) | 사용처 |
-|---|---|
-| `git/config`, `git/identities/` | Git include, 회사 URL·commit identity |
-| `ssh/config`, `ssh/keys/` | SSH Include, 비공개 호스트·public key 선택 |
-| `shell.zsh` | 공통 설정 다음, 기기별 local.zsh 이전에 로드 |
-| `secrets.json` | bws가 개인 목록 다음에 로드 |
-| `terminal/` | 비공개 프로젝트 색상 규칙 |
+## 유지한 기본 동작과 범위
 
-연결 해제는 `~/.config/dotfiles/private` 심볼릭 링크만 제거하고 새 셸을 연다.
-이미 agent에 로드된 키는 남으므로 필요한 키는 별도로 제거한다.
-
-## 기기별 설정과 업데이트
-
-Git에 넣지 않을 기기별 셸 설정은 `~/.config/dotfiles/local.zsh`에 둔다.
-공통 기능은 공개 저장소에서만 수정하고, 회사 정보는 비공개 저장소에서만 수정한다.
-각 저장소를 `git pull`하면 연결된 파일에 반영된다. 새 파일이나 링크가 추가된 경우에는
-bootstrap을 다시 실행한다. 경로를 옮겨도 bootstrap 또는 attach를 다시 실행하면 된다.
-
-미분류 Git 저장소의 커밋은 빈 identity로 실패하도록 유지한다. 외부 저장소에서 커밋할 때는
-해당 저장소의 `git config --local user.name`과 `user.email`을 명시한다.
-개인 Git identity에는 실명·개인 이메일이 들어 있다. 공개 시 이 정보도 공개된다.
-
-## 선택 기능
-
-- Oh My Zsh는 이미 설치된 경우에만 읽는다. 자동 다운로드하지 않는다.
-- zoxide, Yazi의 `y`, Zellij의 `zj`와 터미널 색상 기능은 유지한다.
-- `pip`는 원래 의미를 유지한다. uv를 사용할 때는 `uv pip`를 직접 실행한다.
-- `terminal-colors` UI는 로컬 색상 파일을 편집한다. 회사 설정이 연결된 셸에서는
-  비공개 색상 파일을 편집하므로 업무 경로가 공개 저장소에 기록되지 않는다.
-- Yazi.app과 `open` 기반 opener는 macOS 전용이다. Linux·WSL에서는 Yazi의 기본
-  opener와 `y`를 쓰며, macOS 앱 링크를 설치하지 않는다.
-- Dev Container는 `./bin/install-container-shell.sh`로 셸·Git·SSH만 연결한다.
-  agent socket은 컨테이너 실행 환경이 전달해야 한다. 공개키는 같은 설정을 사용한다.
+- 공개 HTTPS는 SSH로 강제 변환하지 않는다. 인증 없이 공개 저장소 업데이트가 가능하다.
+- `github-personal` SSH 별칭은 비공개 설정을 가져올 수 있도록 기본 제공한다.
+- Git의 st/co alias와 미분류 identity 차단은 기본 설정이다. Git identity는 화면에서 명시한다.
+- macOS 앱·open 기반 opener는 macOS 전용이다. Linux·WSL은 Yazi 기본 opener를 사용한다.
+- 선택 도구의 설치·OS 런타임·프로젝트 의존성 전체를 자동 관리하지 않는다.
+- Obsidian 문서는 안내이며 자동 설치하지 않는다.
+- 고급 secret 주입은 [Bitwarden 문서](docs/bitwarden.md)를 참고한다.
 
 ## 검증
 
 ```sh
-./bin/verify.sh            # 오프라인 기본 검증, Bitwarden·agent 로그인 불필요
-./bin/verify.sh --session  # Bitwarden unlock과 개인 agent key까지 확인
+python3 tests/smoke.py
+python3 tests/dashboard.py
+./bin/verify.sh
+./bin/verify.sh --session  # Bitwarden과 개인 agent key까지 확인
 ```
 
-기본 검증 성공이 원격 인증 성공을 뜻하지는 않는다. 네트워크 인증은 별도로
-`ssh -T github-personal`로 확인한다. macOS 앱 실행은 macOS에서 확인해야 한다.
-
-상세: [인증](docs/authentication.md), [Bitwarden](docs/bitwarden.md),
-[Yazi](docs/yazi.md), [Obsidian](docs/obsidian.md).
+앞의 두 테스트는 임시 홈에서 실행한다. 실제 Bitwarden·원격 SSH·macOS GUI는 별도 확인이 필요하다.

@@ -18,10 +18,6 @@ check 'public HTTPS remains HTTPS' sh -c '
   actual=$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -c include.path="$1" ls-remote --get-url https://github.com/doh0106/dotfiles.git)
   [ "$actual" = https://github.com/doh0106/dotfiles.git ]
 ' _ "$repo_dir/links/git/config"
-check 'personal commit identity' sh -c '
-  actual=$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C /tmp -c include.path="$1" -c remote.origin.url=https://github.com/doh0106/example.git config --get user.email)
-  [ "$actual" = doh0106@naver.com ]
-' _ "$repo_dir/links/git/config"
 check 'unclassified commit identity blocked' sh -c '
   actual=$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C /tmp -c include.path="$1" -c remote.origin.url=https://github.com/example/example.git config --get user.email)
   [ -z "$actual" ]

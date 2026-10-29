@@ -33,7 +33,9 @@ bws() {
     source "$dotfiles_dir/bin/load-secrets.sh" "$DOTFILES_SECRETS_MANIFEST"
     return $?
   fi
-  source "$dotfiles_dir/bin/load-secrets.sh" "$dotfiles_dir/secrets.json" || return 1
+  manifest="$HOME/.config/dotfiles/dashboard/secrets.json"
+  [[ -r "$manifest" ]] || manifest="$dotfiles_dir/secrets.json"
+  source "$dotfiles_dir/bin/load-secrets.sh" "$manifest" || return 1
   manifest="$HOME/.config/dotfiles/private/secrets.json"
   if [[ -r "$manifest" ]]; then
     source "$dotfiles_dir/bin/load-secrets.sh" "$manifest" || return 1
