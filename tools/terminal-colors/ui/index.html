@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Terminal colors</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">LOCAL DOTFILES TOOL</p>
+          <h1>Terminal colors</h1>
+          <p class="subtle">저장할 때만 Ghostty·iTerm2 규칙 파일을 변경합니다.</p>
+        </div>
+        <div class="actions">
+          <span id="status" role="status"></span>
+          <button id="save" class="primary">규칙 저장</button>
+        </div>
+      </header>
+
+      <nav aria-label="터미널 선택">
+        <button class="tab active" data-tab="ghostty">Ghostty 본문 색</button>
+        <button class="tab" data-tab="iterm">iTerm2 탭 색</button>
+      </nav>
+
+      <section id="ghostty" class="panel active">
+        <div class="panel-heading">
+          <div><h2>프로젝트별 본문 색</h2><p>한 Ghostty 탭 전체에 적용됩니다.</p></div>
+          <button data-add="ghostty">+ 규칙 추가</button>
+        </div>
+        <div id="ghostty-rules" class="rules"></div>
+      </section>
+
+      <section id="iterm" class="panel">
+        <div class="panel-heading">
+          <div><h2>프로젝트별 탭 색</h2><p>iTerm2의 네이티브 탭 chrome에 적용됩니다.</p></div>
+          <button data-add="iterm">+ 규칙 추가</button>
+        </div>
+        <div id="iterm-rules" class="rules"></div>
+      </section>
+    </main>
+    <template id="ghostty-template">
+      <article class="rule ghostty-rule">
+        <div class="rule-top"><label>적용 폴더 <input class="path" placeholder="폴더 선택 버튼을 사용하세요"></label><button class="folder">폴더 선택</button><button class="remove" title="규칙 삭제">×</button></div>
+        <div class="color-grid">
+          <label>배경색 <input class="picker background-picker" type="color"><input class="hex background" maxlength="7"></label>
+          <label>전경색 <input class="picker foreground-picker" type="color"><input class="hex foreground" maxlength="7"></label>
+        </div>
+        <div class="swatches"></div>
+        <div class="terminal-preview"><span class="path-preview">~/project</span><span>❯ git status</span><span>On branch main</span></div>
+      </article>
+    </template>
+    <template id="iterm-template">
+      <article class="rule iterm-rule">
+        <div class="rule-top"><label>적용 폴더 <input class="path" placeholder="폴더 선택 버튼을 사용하세요"></label><button class="folder">폴더 선택</button><button class="remove" title="규칙 삭제">×</button></div>
+        <label>탭 색 <input class="picker tab-picker" type="color"><input class="hex color" maxlength="7"></label>
+        <div class="swatches"></div>
+        <div class="iterm-preview"><span class="dot"></span><span class="path-preview">~/project</span><span class="close">×</span></div>
+      </article>
+    </template>
+    <script src="app.js"></script>
+  </body>
+</html>

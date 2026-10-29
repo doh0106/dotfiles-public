@@ -1,0 +1,4 @@
+[mgr]
+prepend_keymap = [
+  { on = [ "g", "i" ], run = "cd --interactive", desc = "경로를 입력해 이동" },
+]

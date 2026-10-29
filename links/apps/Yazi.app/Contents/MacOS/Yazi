@@ -1,0 +1,28 @@
+#!/bin/zsh
+
+set -eu
+
+app_root="${0:A:h:h:h}"
+config_file="$app_root/Contents/Resources/ghostty.conf"
+
+existing_pid=""
+while IFS= read -r pid; do
+  process_command="$(/bin/ps -p "$pid" -o command= 2>/dev/null || true)"
+  if [[ "$process_command" == *"--config-file=$config_file"* ]]; then
+    existing_pid="$pid"
+    break
+  fi
+done < <(/usr/bin/pgrep -x ghostty 2>/dev/null || true)
+
+if [[ -n "$existing_pid" ]]; then
+  # 3 = 기존 인스턴스의 모든 창을 다른 앱보다 앞으로 가져온다.
+  if /usr/bin/osascript -l JavaScript -e \
+    "ObjC.import('AppKit'); const app = $.NSRunningApplication.runningApplicationWithProcessIdentifier($existing_pid); if (!app) throw new Error('process not found'); app.activateWithOptions(3);" \
+    >/dev/null 2>&1; then
+    exit 0
+  fi
+fi
+
+exec /usr/bin/open -na Ghostty --args \
+  --config-default-files=false \
+  "--config-file=$config_file"

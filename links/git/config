@@ -1,0 +1,18 @@
+[core]
+    pager = cat
+[alias]
+    st = status
+    co = checkout
+[user]
+    name =
+    email =
+    useConfigOnly = true
+# HTTPS stays HTTPS so public repositories can be updated without SSH credentials.
+[includeIf "hasconfig:remote.*.url:https://github.com/doh0106/**"]
+    path = identities/personal.gitconfig
+[includeIf "hasconfig:remote.*.url:git@github.com:doh0106/**"]
+    path = identities/personal.gitconfig
+[includeIf "hasconfig:remote.*.url:git@github-personal:doh0106/**"]
+    path = identities/personal.gitconfig
+[include]
+    path = ~/.config/dotfiles/private/git/config

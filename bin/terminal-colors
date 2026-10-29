@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Ghostty·iTerm2 프로젝트 색 규칙을 편집하는 일회성 로컬 UI를 연다.
+
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+command -v node >/dev/null 2>&1 || {
+  echo "terminal-colors에는 Node.js가 필요합니다." >&2
+  exit 1
+}
+
+exec node "$REPO_DIR/tools/terminal-colors/server.mjs"

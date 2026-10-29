@@ -1,0 +1,13 @@
+[opener]
+chrome = [
+  { run = 'open -a "Google Chrome" %s', orphan = true, desc = "Chrome", for = "macos" },
+]
+vscode = [
+  { run = 'open -a "Visual Studio Code" %s', orphan = true, desc = "VS Code", for = "macos" },
+]
+
+[open]
+prepend_rules = [
+  { url = "*/",   use = [ "vscode", "open", "reveal" ] },
+  { url = "*.md", use = [ "chrome", "edit", "reveal" ] },
+]

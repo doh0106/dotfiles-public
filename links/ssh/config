@@ -1,0 +1,9 @@
+# Specific private hosts precede defaults (OpenSSH uses the first obtained value).
+Include ~/.config/dotfiles/private/ssh/config
+Host github-personal
+    HostName github.com
+    User git
+    IdentitiesOnly yes
+    IdentityFile ~/.ssh/keys/github-personal.pub
+Host *
+    AddKeysToAgent yes
