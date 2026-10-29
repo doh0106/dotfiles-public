@@ -88,6 +88,7 @@ def generate(state):
     git='# Generated local identity configuration\n'
     if 'git' in enabled:
         v=state['git']['values']
+        git+='[user]\n    name =\n    email =\n    useConfigOnly = true\n'
         for prefix in (f'https://github.com/{v["owner"]}/**',f'git@github.com:{v["owner"]}/**',f'git@github-personal:{v["owner"]}/**'):
             git+='[includeIf '+json.dumps('hasconfig:remote.*.url:'+prefix)+']\n    path = personal.gitconfig\n'
         write(DATA/'personal.gitconfig','[user]\n    name = '+json.dumps(v['name'],ensure_ascii=False)+'\n    email = '+json.dumps(v['email'])+'\n')
@@ -114,6 +115,7 @@ def installed(f,state):
 
 def plan(state):
     rows=[]
+    post_configure=[]
     darwin=sys.platform=='darwin';apt=shutil.which('apt-get') is not None
     packages={'git':'git','ssh':'openssh-client','zoxide':'zoxide','zellij':'zellij','yazi':'yazi'}
     brew={'git':'git','ssh':'openssh','zoxide':'zoxide','zellij':'zellij','yazi':'yazi','bitwarden':'bitwarden-cli'}
@@ -127,14 +129,14 @@ def plan(state):
             else:steps.append({'bitwarden':'설치 안내: https://bitwarden.com/help/cli/','nvm':'설치 안내: https://github.com/nvm-sh/nvm#installing-and-updating','zellij':'설치 안내: https://zellij.dev/documentation/installation','yazi':'설치 안내: https://yazi-rs.github.io/docs/installation/'}.get(f['id'],f['name']+' 설치 필요: OS 패키지 관리자로 준비하세요.'))
         if f['id']=='bitwarden':
             if not shutil.which('jq'):steps.append('jq 설치 필요: brew install jq (macOS) / sudo apt-get install jq (Debian·Ubuntu)')
-            steps+=['bw login  # 최초 로그인일 때만','bws  # 새 zsh에서 실행; 사용자 인증 필요']
+            post_configure+=['bw login  # 최초 로그인일 때만; 사용자 본인 인증','bws  # configure 후 연 새 zsh에서 실행; 사용자 잠금 해제 필요']
         if f['id']=='ssh' and not Path(state['ssh']['values']['key']).expanduser().is_file():steps.append('공개키 파일을 지정한 경로에 준비하세요. 개인키는 agent에 별도로 로드합니다.')
         if f['id']=='colors':steps.append('색상은 Ghostty 또는 iTerm2에서 적용됩니다. WSL의 다른 터미널에는 적용되지 않습니다.')
         rows.append(dict(name=f['name'],installed=ready,steps=steps or ['이미 설치됨 · 재설치 없이 설정만 갱신합니다.']))
     prerequisites=[]
     for command in ('git','zsh','bash'):
         if not shutil.which(command):prerequisites.append(command+' 설치 필요: OS 패키지 관리자로 준비한 뒤 configure를 실행하세요.')
-    return dict(prerequisites=prerequisites,features=rows,configure=shlex.join(['python3',str(REPO/'bin/dashboard.py'),'configure']),after='새 zsh를 열어 셸 설정을 반영하세요. 비활성화 전 셸에 로드된 함수·alias는 새 셸부터 사라집니다.')
+    return dict(prerequisites=prerequisites,features=rows,post_configure=post_configure,configure=shlex.join(['python3',str(REPO/'bin/dashboard.py'),'configure']),after='새 zsh를 열어 셸 설정을 반영하세요. 비활성화 전 셸에 로드된 함수·alias는 새 셸부터 사라집니다.')
 
 def snapshot():
     state=load();features=[]
@@ -167,14 +169,14 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,KeyError,TypeError,OSError) as exc:self.respond(400,{'error':str(exc)})
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('action',nargs='?',default='serve',choices=['serve','configure','plan']);parser.add_argument('--no-browser',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('action',nargs='?',default='serve',choices=['serve','configure','plan']);parser.add_argument('--no-browser',action='store_true');parser.add_argument('--port',type=int,default=0);args=parser.parse_args()
     if args.action=='plan':print(json.dumps(plan(load()),ensure_ascii=False,indent=2));return
     if args.action=='configure':
         if not SETTINGS.exists():raise SystemExit('대시보드에서 설정을 먼저 저장하세요.')
         generate(load())
         subprocess.run(['bash',str(REPO/'bin/bootstrap.sh')],check=True)
         print('설정 연결 완료. 새 zsh를 여세요. 도구 설치는 실행하지 않았습니다.');return
-    server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+    server=ThreadingHTTPServer(('127.0.0.1',args.port),Handler)
     url=f'http://127.0.0.1:{server.server_port}/';print(url,flush=True)
     if not args.no_browser:webbrowser.open(url)
     try:server.serve_forever()

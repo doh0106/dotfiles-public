@@ -40,7 +40,8 @@ function showPlan(plan){
   const intro=document.createElement('p');intro.textContent='아래 작업은 자동 실행되지 않습니다. 사람이 직접 실행하거나 AI에게 이 안내를 전달하세요.';target.append(intro);
   for(const line of (plan.prerequisites||[])){const p=document.createElement('p');p.textContent=line;target.append(p)}
   for(const feature of plan.features){const h=document.createElement('h3');h.textContent=feature.name+' · '+(feature.installed?'설치됨':'설치 필요');target.append(h);const pre=document.createElement('pre');pre.textContent=feature.steps.join('\n');target.append(pre)}
-  const h=document.createElement('h3');h.textContent='마지막: 설정 연결 · configure';target.append(h);const pre=document.createElement('pre');pre.textContent=plan.configure;target.append(pre);const p=document.createElement('p');p.textContent=plan.after;target.append(p);
+  const h=document.createElement('h3');h.textContent='설정 연결 · configure';target.append(h);const pre=document.createElement('pre');pre.textContent=plan.configure;target.append(pre);const p=document.createElement('p');p.textContent=plan.after;target.append(p);
+  if(plan.post_configure?.length){const h=document.createElement('h3');h.textContent='새 zsh를 연 뒤: 인증 · 키 로드';target.append(h);const pre=document.createElement('pre');pre.textContent=plan.post_configure.join('\n');target.append(pre)}
   const copy=document.createElement('button');copy.className='ghost';copy.textContent='AI에게 전달할 안내 복사';copy.onclick=async()=>{try{await navigator.clipboard.writeText('선택된 dotfiles 기능을 준비해 주세요. 설치된 도구는 재설치하지 말고, 아래 필요한 작업과 configure만 진행하세요. 인증은 사용자에게 맡기세요.\n\n'+target.innerText);toast('안내를 복사했어요.')}catch{toast('브라우저에서 안내 텍스트를 직접 선택해 복사하세요.')}};target.append(copy);
 }
 async function boot(){try{const res=await fetch('/api/state');if(!res.ok)throw Error('설정을 읽지 못했습니다.');const data=await res.json();features=data.features;baseline=structuredClone(features);$('environment').textContent=data.environment;render();showPlan(data.plan)}catch(error){toast(error.message)}}

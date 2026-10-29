@@ -18,10 +18,12 @@ check 'public HTTPS remains HTTPS' sh -c '
   actual=$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -c include.path="$1" ls-remote --get-url https://github.com/doh0106/dotfiles.git)
   [ "$actual" = https://github.com/doh0106/dotfiles.git ]
 ' _ "$repo_dir/links/git/config"
+if python3 -c 'import json,sys; from pathlib import Path; p=Path.home()/".config/dotfiles/dashboard/settings.json"; sys.exit(0 if p.exists() and json.loads(p.read_text())["git"]["enabled"] else 1)'; then
 check 'unclassified commit identity blocked' sh -c '
   actual=$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C /tmp -c include.path="$1" -c remote.origin.url=https://github.com/example/example.git config --get user.email)
   [ -z "$actual" ]
 ' _ "$repo_dir/links/git/config"
+fi
 if [[ "${1:-}" == --session ]]; then
   for cmd in bw jq; do check "command $cmd" command -v "$cmd"; done
   check 'vault unlocked' sh -c '[ "$(bw status | jq -r .status)" = unlocked ]'

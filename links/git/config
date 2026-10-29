@@ -3,10 +3,6 @@
 [alias]
     st = status
     co = checkout
-[user]
-    name =
-    email =
-    useConfigOnly = true
 # Public HTTPS URLs are never rewritten.
 [include]
     path = ~/.config/dotfiles/dashboard/git.config

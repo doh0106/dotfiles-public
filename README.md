@@ -27,6 +27,7 @@ python3 bin/dashboard.py
 브라우저가 열리지 않으면 출력된 `http://127.0.0.1:포트/` 주소를 직접 연다.
 WSL에서는 Windows 브라우저로 해당 localhost 주소를 연다. 이 환경에서 localhost 전달이
 꺼져 있다면 WSL의 localhost 연결 설정을 확인한다. `file://`로 HTML만 열면 API가 동작하지 않는다.
+포트를 고정하려면 `python3 bin/dashboard.py --port 37691`처럼 실행한다.
 종료는 터미널에서 Ctrl-C. 로그인 시작이나 시스템 서비스 등록은 하지 않는다.
 
 ## 3. 선택하고 설정 파일 생성
@@ -57,7 +58,8 @@ WSL에서는 Windows 브라우저로 해당 localhost 주소를 연다. 이 환�
 - 이미 설치됐다면 설치 단계를 생략한다.
 - 알려진 패키지 관리자를 사용할 때는 존재 여부를 검사하는 설치 snippet을 제공한다.
 - 배포판마다 설치 방식이 다른 도구는 공식 설치 문서 링크를 제공한다.
-- 마지막 configure 명령으로 홈 설정과 선택 기능을 연결한다.
+- configure 명령으로 홈 설정과 선택 기능을 연결한다.
+- 새 zsh를 연 뒤 인증·키 로드 등 후속 단계를 실행한다.
 - AI에게 전달할 안내 복사 버튼으로 작업 순서를 전달할 수 있다.
 
 ```sh
@@ -110,7 +112,8 @@ Git·SSH Include로 회사 설정을 읽고, bws는 개인 목록 다음에 비�
 
 - 공개 HTTPS는 SSH로 강제 변환하지 않는다. 인증 없이 공개 저장소 업데이트가 가능하다.
 - `github-personal` SSH 별칭은 비공개 설정을 가져올 수 있도록 기본 제공한다.
-- Git의 st/co alias와 미분류 identity 차단은 기본 설정이다. Git identity는 화면에서 명시한다.
+- Git의 st/co alias는 기본 제공한다. Git identity를 켠 경우에만 소유자별 identity와
+  미분류 identity 차단을 적용한다. 끄면 기존 사용자 identity를 유지한다.
 - macOS 앱·open 기반 opener는 macOS 전용이다. Linux·WSL은 Yazi 기본 opener를 사용한다.
 - 선택 도구의 설치·OS 런타임·프로젝트 의존성 전체를 자동 관리하지 않는다.
 - Obsidian 문서는 안내이며 자동 설치하지 않는다.
