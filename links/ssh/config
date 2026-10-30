@@ -1,10 +1,5 @@
-# Specific private hosts precede defaults (OpenSSH uses the first obtained value).
+# Local service connections and optional private overlay.
 Include ~/.config/dotfiles/dashboard/ssh.config
 Include ~/.config/dotfiles/private/ssh/config
-Host github-personal
-    HostName github.com
-    User git
-    IdentitiesOnly yes
-    IdentityFile ~/.ssh/keys/github-personal.pub
 Host *
-    AddKeysToAgent yes
+    AddKeysToAgent no

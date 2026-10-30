@@ -28,11 +28,11 @@ def link(source, target):
     target.symlink_to(source, target_is_directory=source.is_dir())
 
 
-def block(path, name, contents, prepend=False):
+def block(path, name, contents, prepend=False, preserve_link=False):
     begin, end = f'# >>> dotfiles {name} >>>', f'# <<< dotfiles {name} <<<'
     old = path.read_text() if path.exists() else ''
     # Migrate the legacy whole-file symlink without editing its source repository.
-    if path.is_symlink():
+    if path.is_symlink() and not preserve_link:
         legacy = str(path.resolve()).endswith(('/links/zsh/zshrc', '/links/ssh/config'))
         path.rename(path.with_name(path.name + '.bak.' + datetime.now().strftime('%Y%m%d%H%M%S%f')))
         if legacy:
@@ -93,13 +93,24 @@ def install(repo, mode):
     legacy = str(repo / 'links/git/config')
     if legacy in existing:
         subprocess.run(['git', 'config', '--global', '--fixed-value', '--unset-all', 'include.path', legacy], check=True)
-    if include not in existing:
-        subprocess.run(['git', 'config', '--global', '--add', 'include.path', include], check=True)
+    # Keep the managed include after existing global identities/helpers so gitdir
+    # policies take precedence. Local repository/command overrides remain Git's policy.
+    explicit = os.environ.get('GIT_CONFIG_GLOBAL')
+    xdg = Path(os.environ.get('XDG_CONFIG_HOME', str(home / '.config'))) / 'git/config'
+    global_path = Path(explicit).expanduser() if explicit else home / '.gitconfig' if (home / '.gitconfig').exists() or not xdg.exists() else xdg
+    original = global_path.read_text() if global_path.exists() else ''
+    complete = original.rstrip().endswith('# <<< dotfiles git <<<') and existing.count(include) == 1
+    if not complete:
+        if include in existing:
+            subprocess.run(['git', 'config', '--global', '--fixed-value', '--unset-all', 'include.path', include], check=True)
+        import json
+        block(global_path, 'git', '[include]\n    path = ' + json.dumps(include, ensure_ascii=False), preserve_link=True)
     if mode == 'container':
         return
     import json
     settings = config / 'dashboard/settings.json'
-    enabled = json.loads(settings.read_text()) if settings.exists() else {}
+    saved = json.loads(settings.read_text()) if settings.exists() else {}
+    enabled = saved.get('features', saved)
     def optional_link(feature, source, target):
         if enabled.get(feature, {}).get('enabled', False):
             link(source, target)

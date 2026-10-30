@@ -1,28 +1,34 @@
 # Bitwarden 운영
 
-현재 기본 흐름은 대시보드 → Git 폴더 프로필 → Bitwarden → SSH agent 또는 gh 자식 프로세스다.
+기본 흐름은 대시보드의 작업 프로필·연결 → Bitwarden → SSH agent / HTTPS Git helper / gh·glab 자식 프로세스다.
 
 ## 준비할 항목
 
 | 용도 | 지원 형식 | 내용 |
 |---|---|---|
-| 개인·회사 SSH 키 | Secure Note (`note`) | OpenSSH 개인키 본문 |
-| 개인·회사 SSH 키 | Native SSH Key (`sshkey`) | `sshKey.privateKey` |
-| 개인·회사 gh 토큰 | Secure Note (`note`) | 토큰 한 줄 |
-| 개인·회사 gh 토큰 | Login (`login`) | 비밀번호 필드에 토큰 |
+| 연결별 SSH 키 | Secure Note (`note`) | OpenSSH 개인키 본문 |
+| 연결별 SSH 키 | Native SSH Key (`sshkey`) | `sshKey.privateKey` |
+| HTTPS Git / API 토큰 | Secure Note (`note`) | 토큰 한 줄 |
+| HTTPS Git / API 토큰 | Login (`login`) | 비밀번호 필드에 토큰 |
 
 키의 public key 파일도 대시보드에 지정한 위치에 준비한다. 공개키는 agent에서 사용할 개인키를
-선택하는 데 사용한다. 실제 private key나 API 토큰을 dashboard/settings.json에 넣지 않는다.
+선택하는 데 사용한다. 키를 agent에 넣기 전에 메모리에서 공개키를 추출해 대조한다.
+추가 passphrase가 필요한 개인키는 기존 agent 공급자에서 먼저 준비한다. 실제 private key나 API 토큰을 dashboard/settings.json에 넣지 않는다.
+
+새 대시보드에서는 **연결과 서비스 → 인증 참조**에 공급자·항목 이름·형식을 지정한다.
+SSH 공개키 경로는 프로필이 아닌 연결에 속한다. HTTPS Git과 API 토큰 참조도 각각 선택한다.
+Bitwarden을 사용하기 위해 Git 신원 설정을 강제로 켤 필요는 없다.
 
 ## 세션 명령
 
 ```sh
 bwl             # 기기 최초 로그인/로그인 만료, 세션 출력은 캡처
-bwu             # 잠금 해제, BW_SESSION은 현재 셸에만 export
-bws personal    # 개인 SSH 키 로드 (저장소 밖)
-bws work        # 회사 SSH 키 로드 (회사 프로필을 켰을 때)
-bws             # 저장소 안: 현재 Git 폴더 프로필
-bwgh --profile personal repo list  # 토큰은 실행한 gh 프로세스에만 전달
+bwu             # 잠금 해제, BW_SESSION은 현재 셸에서 export; 자식에 상속 가능
+bws --connection YOUR-CONNECTION-ID # 선택 연결의 인증 준비
+bws personal    # 프로필에 연결이 하나일 때의 단축형
+bws             # 저장소 안: 현재 Git 폴더 프로필 + origin 호스트/방식
+bwgh --connection YOUR-GITHUB-ID repo list # 해당 gh 자식에 토큰 주입
+bwglab --connection YOUR-GITLAB-ID mr list  # 해당 glab 자식에 토큰 주입
 gh pr list      # 저장소 안: 현재 프로필 토큰
 bwe             # 관리 대상 키 제거, 빈 자체 agent 종료, CLI 잠금·셸 변수 정리
 ```
@@ -58,7 +64,7 @@ source ./bin/load-secrets.sh /absolute/path/to/custom-secrets.json
 이 경로는 bws의 기본 경로가 아니다. `write-file`은 의도적으로 비밀값을 디스크에 쓰며,
 `eval-env`는 현재 셸에 값을 남긴다. 고급 로더로 넣은 키는 bwe의 관리 목록에 자동 등록되지 않는다.
 SSH 키에는 `DOTFILES_KEY_LIFETIME` 또는 기본 3600초를 적용한다.
-일반 Git·gh 용도로는 bws/bwgh를 사용한다.
+일반 Git·서비스 API에는 bws/bwgh/bwglab를 사용한다.
 
 ## 세션 상태와 한계
 

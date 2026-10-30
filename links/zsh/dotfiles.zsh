@@ -7,7 +7,7 @@ typeset -U path
 path=("$HOME/.local/bin" $path)
 for _dotfiles_feature in "${_dotfiles_enabled[@]}"; do
   case "$_dotfiles_feature" in
-    ohmyzsh|bitwarden|gh|zoxide|zellij|yazi|nvm)
+    ohmyzsh|authentication|bitwarden|gh|glab|zoxide|zellij|yazi|nvm)
       source "$_dotfiles_zsh_dir/integrations/$_dotfiles_feature.zsh" ;;
     colors)
       source "$_dotfiles_zsh_dir/integrations/terminal-colors.zsh"
