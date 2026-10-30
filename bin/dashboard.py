@@ -15,6 +15,7 @@ import webbrowser
 from urllib.parse import urlsplit
 import configuration as cfg
 import features
+import runbook
 
 REPO=cfg.REPO
 DATA=cfg.DATA
@@ -32,7 +33,7 @@ def plan(state):
     creds={c['id']:c for c in state['credentials']}
     references={ref for c in active for ref in ([c['credential']]+([c['api']['credential']] if c['api']['enabled'] else [])) if ref}
     required={'git','bash','zsh'}
-    if any(c['method']=='ssh' for c in active):required.update(('ssh','ssh-add'))
+    if any(c['method']=='ssh' for c in active):required.update(('ssh','ssh-add','ssh-keygen'))
     if any(creds.get(ref,{}).get('source')=='bitwarden' for ref in references):required.add('bw')
     required.update(c['api']['tool'] for c in active if c['api']['enabled'])
     rows=[]
@@ -40,7 +41,7 @@ def plan(state):
         ready=shutil.which(command) is not None
         instructions=[]
         if not ready:
-            packages={'git':'git','bash':'bash','zsh':'zsh','ssh':'openssh-client','ssh-add':'openssh-client'}
+            packages={'git':'git','bash':'bash','zsh':'zsh','ssh':'openssh-client','ssh-add':'openssh-client','ssh-keygen':'openssh-client'}
             if sys.platform=='darwin' and shutil.which('brew') and command in ('gh','glab','bw','zsh'):
                 instructions=[f'command -v {command} >/dev/null 2>&1 || brew install '+('bitwarden-cli' if command=='bw' else command)]
             elif shutil.which('apt-get') and command in packages:instructions=[f'command -v {command} >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y {packages[command]})']
@@ -62,32 +63,13 @@ def plan(state):
             else:steps=['설치 안내: '+DOCS.get(f['id'],'OS 패키지 관리자로 '+f['name']+' 설치')]
         if f['id']=='colors':steps.append('프로젝트 색상은 Ghostty 또는 iTerm2에서 적용됩니다.')
         rows.append(dict(id=f['id'],name=f['name'],installed=ready,steps=steps or ['설치됨 · 재설치 없이 설정합니다.']))
-    connections=[]
-    profiles={p['id']:p for p in state['profiles']}
-    for c in active:
-        prefix=shlex.join(['bws','--connection',c['id']]);steps=[];warnings=[]
-        cred=creds.get(c['credential'])
-        if c['method']=='ssh' and not Path(c['publicKey']).expanduser().is_file():warnings.append('공개키 파일을 '+c['publicKey']+'에 준비하세요. 이 경로에는 .pub만 두고, 개인키는 선택한 공급자에서 로드합니다.')
-        refs=[creds.get(c['credential'])]+([creds.get(c['api']['credential'])] if c['api']['enabled'] else [])
-        if any(ref and ref['source']=='bitwarden' for ref in refs):steps.append('bwl  # 최초 로그인/로그인 만료 시. 사용자가 직접 인증합니다.')
-        steps.append(prefix+'  # '+('선택 연결의 SSH 키 준비' if c['method']=='ssh' else 'HTTPS helper에 필요한 vault 준비; SSH agent 불필요'))
-        if c['kind']=='git':
-            if c['method']=='ssh':
-                name,port=cfg.host_parts(c['host']);url=('ssh://'+c['sshUser']+'@'+c['host']+'/OWNER/REPO.git') if port else c['sshUser']+'@'+name+':OWNER/REPO.git'
-            else:url='https://'+c['host']+'/OWNER/REPO.git'
-            target=str(Path(profiles[c['profile']]['path']).expanduser()/'REPO')
-            steps.append(shlex.join(['git','-c','include.path='+str(DATA/('profile-'+c['profile']+'.gitconfig')),'clone',url,target]))
-            steps.append('저장소 안: git config --show-origin --get user.email; git remote -v; git config --get dotfiles.profile')
-        else:steps.append(shlex.join(['ssh',c.get('sshAlias') or c['id']]))
-        if c['api']['enabled']:
-            reference=creds.get(c['api']['credential'])
-            if reference and reference['source']=='environment':warnings.append('현재 셸에 '+reference['variable']+' 토큰 환경변수를 준비하세요. 값은 이 설정에 넣지 않습니다. 작업 후 unset '+reference['variable']+'로 해제하세요.')
-            steps.append(shlex.join(['bw'+c['api']['tool'],'--connection',c['id'],'auth','status']))
-        if cred and cred['source']=='git-helper':warnings.append('외부 helper의 저장·만료·삭제 정책은 해당 제품에서 관리합니다. bwe가 외부 저장소의 자격증명을 지우지는 않습니다.')
-        connections.append(dict(id=c['id'],name=c['name'],warnings=warnings,steps=steps))
-    after=['exec zsh  # 새 셸에서 변경한 integration을 읽습니다.']
-    if active:after.append('bwe  # 이 셸이 추가한 키/변수를 정리. 토큰 서버 만료·외부 helper 저장소는 별도 관리합니다.')
-    return dict(dependencies=rows,connections=connections,configure=shlex.join(['python3',str(REPO/'bin/dashboard.py'),'configure']),after=after,notes=['저장은 로컬 설정 파일을 생성합니다. 설치·configure·로그인은 아래 안내를 사람이 또는 AI가 실행합니다.','Git 연결 방식을 바꿔도 기존 remote URL은 바꾸지 않습니다. git remote set-url origin <선택한 방식의 URL>로 별도 변경하세요.','linked worktree는 원본 저장소의 gitdir 프로필을 따릅니다.','SSH 공개키는 신원 선택용입니다. Git 서버의 호스트 키 신원 확인(known_hosts)은 계속 OpenSSH가 담당합니다.'])
+    configure=shlex.join(['python3',str(REPO/'bin/dashboard.py'),'configure'])
+    return dict(dependencies=rows,configure=configure,workflow=runbook.build(state,rows,REPO,DATA),notes=[
+        '저장은 로컬 설정 파일을 생성합니다. 설치·configure·로그인은 사람이 또는 AI가 안내에 따라 실행합니다.',
+        'Bitwarden 상태는 서버에서 자동 조회하지 않습니다. 터미널의 bw status 결과에 맞는 분기만 실행하세요.',
+        '기존 remote URL은 자동 변경하지 않습니다. SSH/HTTPS 방식을 바꾸면 git remote set-url origin URL로 별도 변경하세요.',
+        'linked worktree는 원본 저장소의 gitdir 프로필을 따릅니다.',
+    ])
 
 
 def auth_status():

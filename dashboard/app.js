@@ -141,17 +141,46 @@ function renderOverview(){
  for(const [title,key,text] of [['실행 환경','appearance','zsh와 Oh My Zsh 테마, 선택 도구'],['작업 신원','profiles',draft.profiles.filter(p=>p.enabled).length+'개 프로필 · gitdir 범위'],['원격 접속','connections',draft.connections.filter(c=>c.enabled).length+'개 활성 연결 · SSH/HTTPS'],['인증정보','secrets',draft.credentials.length+'개 참조 · 키/토큰 값 저장 안 함']]){const body=groupBox(title,grid);body.append(el('p',text,'tool-state'),button('관리 →',()=>navigate(key)))}
  const guide=groupBox('설정이 실제 작업에 반영되는 순서',root);guide.append(el('p','1. 셸·도구 선택 → 2. 작업 폴더·신원 → 3. 서비스·통신 방식 → 4. 인증 참조 → 5. 검토·저장 → 6. 적용 안내 실행','tool-state'),button('설치·configure·인증 안내',()=>navigate('plan'),'btn primary'));explanation(guide,'각 설정은 독립적입니다.','테마만 사용하거나, API 도구 없이 Git만 사용해도 됩니다. 단계는 이해를 위한 순서이며 모든 기능을 활성화할 필요는 없습니다.');guide.append(button('설치·서버 상태 다시 확인',refreshMetadata));
 }
-function planText(plan){const lines=['dotfiles 설정 적용 안내','이미 설치된 도구는 재설치하지 마세요. 인증·2FA는 사용자에게 맡기세요.',''];for(const d of plan.dependencies)lines.push('## '+d.name+' · '+(d.installed?'설치됨':'설치 필요'),...d.steps,'');lines.push('## 설정 연결',plan.configure,'',...plan.after,'');for(const c of plan.connections)lines.push('## '+c.name,...c.warnings,...c.steps,'');lines.push(...plan.notes);return lines.join('\n')}
-async function updatePreview(){preview=await api('/api/preview',draft);return preview}
-function renderPlan(){
- const root=$('page-body');root.replaceChildren();const data=preview||snapshot,body=groupBox('사람 또는 AI가 실행할 안내',root);body.append(el('p',preview?'현재 초안을 검증해 만든 안내입니다. 저장 전에는 파일에 반영되지 않습니다.':'저장된 설정 기준입니다. 초안을 바꿨다면 아래에서 안내를 갱신하세요.','hint'));
- const actions=el('div',undefined,'inline-actions');actions.append(button('초안 기준 안내 갱신',async()=>{try{await updatePreview();renderPlan()}catch(e){toast(e.message)}}),button('AI에게 전달할 안내 복사',async()=>{try{const p=(await updatePreview()).plan;await navigator.clipboard.writeText(planText(p));toast('안내를 복사했습니다.')}catch(e){toast(e.message)}}));body.append(actions);
- for(const row of data.plan.dependencies){const line=el('div',undefined,'instruction-step');line.append(el('h3',row.name+' · '+(row.installed?'설치됨':'설치 필요')));for(const step of row.steps){if(step.startsWith('설치 안내: https://')){const a=el('a','공식 설치 문서 ↗');a.href=step.slice('설치 안내: '.length);a.target='_blank';a.rel='noopener noreferrer';line.append(a)}else line.append(el('pre',step,'long-pre'))}body.append(line)}
- body.append(el('h3','설정 연결 · configure'),el('pre',data.plan.configure,'long-pre'),el('h3','새 셸과 세션 정리'),el('pre',data.plan.after.join('\n'),'long-pre'));
- for(const c of data.plan.connections){const section=el('section',undefined,'instruction-step');section.append(el('h3',c.name));for(const warning of c.warnings)section.append(el('p',warning,'notice'));section.append(el('pre',c.steps.join('\n\n'),'long-pre'));body.append(section)}
- for(const note of data.plan.notes)body.append(el('p',note,'tool-state'));
- const files=groupBox('생성되는 파일',root);renderFiles(files,data.files);
+function planText(plan){
+ const lines=['dotfiles 설정 적용 안내','활성화된 설정에 필요한 단계만 포함합니다. 설치된 도구는 재설치하지 마세요.','조건별 명령을 한꺼번에 실행하지 마세요. 로그인·2FA는 사용자에게 맡기고, 해당 상태의 분기만 실행하세요.','예시 clone의 OWNER/REPO와 대상 경로는 실제 값으로 바꾼 뒤 실행하세요.',''];
+ for(const [index,stage] of plan.workflow.entries()){
+  lines.push('## '+(index+1)+'. '+stage.title,stage.description,'');
+  for(const block of stage.blocks){lines.push('### '+block.title);if(block.when)lines.push('실행 조건: '+block.when);if(block.optional)lines.push('선택 단계 · 해당 조건일 때만');if(block.example)lines.push('실행 전 실제 값으로 수정해야 하는 예시');if(block.text)lines.push(block.text);if(block.commands.length)lines.push('```sh',...block.commands,'```');for(const link of block.links)lines.push(link.label+': '+link.url);lines.push('')}
+ }
+ lines.push(...plan.notes);return lines.join('\n');
 }
+async function updatePreview(){preview=await api('/api/preview',draft);return preview}
+function renderInstruction(parent,block){
+ const outer=el(block.optional?'details':'div',undefined,'runbook-block'+(block.optional?' optional-instruction':''));
+ if(block.optional)outer.append(el('summary',block.title+' · '+(block.when||'필요할 때만')));
+ else outer.append(el('h4',block.title));
+ const content=el('div',undefined,'runbook-block-body');outer.append(content);
+ if(block.when&&!block.optional)content.append(badge(block.when,'amber'));
+ if(block.text)content.append(el('p',block.text,'tool-state'));
+ if(block.commands.length){
+  const commands=block.commands.join('\n');content.append(el('pre',commands,'long-pre'));
+  if(block.example)content.append(el('p','예시입니다. OWNER/REPO와 대상 폴더를 실제 값으로 바꾼 뒤 실행하세요.','hint'));
+  else content.append(button('이 명령 복사',async()=>{try{await navigator.clipboard.writeText(commands);toast('명령을 복사했습니다. 조건을 확인한 뒤 터미널에서 실행하세요.')}catch{toast('명령 텍스트를 직접 선택해 복사하세요.')}},'quiet'));
+ }
+ for(const link of block.links){const a=el('a',link.label+' ↗','instruction-link');a.href=link.url;a.target='_blank';a.rel='noopener noreferrer';content.append(a)}
+ parent.append(outer);
+}
+function renderPlan(){
+ const root=$('page-body');root.replaceChildren();const data=preview||snapshot,body=groupBox('현재 설정에 맞춘 실행 순서',root);
+ body.append(el('p',preview?'검증한 초안 기준입니다. 설정 파일 생성 단계에서 먼저 저장한 뒤 명령을 실행하세요.':'저장된 설정 기준입니다. 화면에서 값을 바꿨다면 초안 기준 안내를 갱신하세요.','hint'));
+ body.append(el('p','같은 WSL / macOS / Linux 터미널에서 진행하세요. 로그인·키 로드는 이 페이지가 자동으로 실행하지 않습니다.','tool-state'));
+ const actions=el('div',undefined,'inline-actions');actions.append(button('초안 기준 안내 갱신',async()=>{try{await updatePreview();renderPlan()}catch(e){toast(e.message)}}),button('AI에게 전달할 안내 복사',async()=>{try{const p=(await updatePreview()).plan;await navigator.clipboard.writeText(planText(p));toast('조건과 실행 순서가 포함된 안내를 복사했습니다.')}catch(e){toast(e.message)}}));body.append(actions);
+ const index=el('nav',undefined,'runbook-index');index.setAttribute('aria-label','적용 순서 바로가기');body.append(index);
+ for(const [number,stage] of data.plan.workflow.entries()){
+  const section=el('section',undefined,'instruction-step runbook-step');section.id='plan-step-'+stage.id;section.dataset.step=stage.id;
+  const heading=el('div',undefined,'between runbook-heading');heading.append(el('h3',(number+1)+'. '+stage.title));if(stage.view)heading.append(button('관련 설정 →',()=>navigate(stage.view),'quiet'));section.append(heading,el('p',stage.description,'tool-state'));
+  for(const block of stage.blocks)renderInstruction(section,block);body.append(section);
+  index.append(button((number+1)+'. '+stage.title,()=>section.scrollIntoView({behavior:'smooth',block:'start'}),'btn'));
+ }
+ const notes=el('details',undefined,'runbook-notes');notes.append(el('summary','적용 범위와 설정 우선순위'));for(const note of data.plan.notes)notes.append(el('p',note,'tool-state'));body.append(notes);
+ const files=el('details',undefined,'group generated-files');files.append(el('summary','생성되는 파일'));const filebody=el('div',undefined,'card-pad');files.append(filebody);root.append(files);renderFiles(filebody,data.files);
+}
+
 function renderFiles(body,files=(preview||snapshot).files){const note=el('p',preview?'검증한 초안의 생성 예정 내용입니다.':'저장된 설정의 생성 내용입니다. 초안 변경은 ‘미리보기 갱신’으로 확인하세요.','hint');body.append(note);const names=Object.keys(files);if(!names.length){body.append(el('p','필수 설정을 채워야 생성 내용을 볼 수 있습니다.','hint'));return}const select=el('select',undefined,'file-picker');select.setAttribute('aria-label','생성 파일 선택');const pre=el('pre',undefined,'long-pre');for(const name of names)select.append(el('option',name));select.onchange=()=>pre.textContent=files[select.value];pre.textContent=files[names[0]];body.append(select,pre,button('초안 미리보기 갱신',async()=>{try{const data=await updatePreview();body.replaceChildren();renderFiles(body,data.files)}catch(e){toast(e.message)}}));}
 function makeCredential(id,source='bitwarden'){return {id,source,kind:'note',item:'',variable:'',helper:'cache',username:''}}
 function uniqueId(base,list){let id=base,i=2;while(list.some(x=>x.id===id))id=base+'-'+i++;return id}

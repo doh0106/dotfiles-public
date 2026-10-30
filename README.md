@@ -49,6 +49,11 @@ GitHub Enterprise와 GitLab Self-Managed도 호스트를 지정한다. SSH 접�
 6. **적용 안내**에서 미설치 도구 안내와 configure·새 셸·인증 명령을 실행한다.
    안내를 복사해 AI에게 전달할 수도 있다.
 
+적용 안내는 현재 선택에 따라 확인 → 인증 재료 → 저장 → 미설치 도구 → configure → 새 zsh →
+Bitwarden 상태별 로그인/잠금 해제 → 연결별 인증 준비 → 접속 확인 → 작업 후 정리 순서로 만든다.
+Bitwarden을 사용하지 않으면 로그인 단계가 없고, HTTPS에는 SSH 키 로드 명령이 나오지 않는다.
+로그인 복구와 최초 clone 예시는 필요할 때만 펼쳐본다. 화면과 AI에게 복사하는 안내는 같은 순서를 사용한다.
+
 처음 받은 환경에서는 기능이 꺼져 있다. 설치된 프로그램도 자동 활성화하지 않는다.
 저장 전 초안은 브라우저 메모리에만 있고, 저장한 설정은 아래 위치에 남는다.
 여러 창이 같은 설정을 바꾸면 오래된 창의 저장을 거부한다.
@@ -150,6 +155,7 @@ Git·SSH Include와 shell.zsh를 읽으며, 연결 해제는 `~/.config/dotfiles
 ```sh
 python3 tests/smoke.py
 python3 tests/dashboard.py
+python3 tests/runbook.py
 python3 tests/auth.py
 ./bin/verify.sh
 # 인증 준비를 한 셸에서만 선택적으로 실행
