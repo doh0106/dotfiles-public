@@ -25,7 +25,7 @@ Node.js·Bitwarden·zsh가 없어도 대시보드부터 열 수 있다. 화면�
 | 영역 | 정하는 것 | 다른 영역과의 관계 |
 |---|---|---|
 | 셸과 테마 | 설치된 Oh My Zsh, 테마, 프레임워크 경로 | 서비스 로그인 없이 사용 가능 |
-| 선택 도구 | zoxide, Zellij, Yazi, nvm, Ghostty·iTerm2 프로젝트 색상 | 설치 여부와 활성화는 별개 |
+| 선택 도구 | 이동·검색·빌드·런타임·AI·서비스 도구를 개별 선택 | 설치 여부와 활성화는 별개 |
 | 작업 프로필 | 폴더 범위, 커밋 이름·이메일 | `gitdir`로 선택. 접속 계정을 의미하지 않음 |
 | 연결과 서비스 | 프로필, 서비스 제품, 호스트, Git SSH/HTTPS 또는 SSH 서버 | 같은 프로필에 여러 서비스와 방식을 연결 가능 |
 | 인증 참조 | 공급자, 항목 이름·형식, 공개키 경로 등 | 개인키·토큰 값은 화면에 입력하지 않음 |
@@ -96,6 +96,50 @@ git remote set-url origin https://YOUR-HOST/OWNER/REPO.git
 python3 bin/dashboard.py plan  # 화면 없이 저장된 설정의 적용 안내 출력
 ```
 
+## 선택 도구 설치와 zi
+
+선택 도구 화면에서 필요한 항목만 켠 뒤 저장하고 적용 안내를 따른다.
+저장·configure는 설치 프로그램을 실행하지 않는다. 안내의 명령을 사람이 또는 AI가 실행한다.
+이미 설치된 도구는 재설치하지 않으며, 기능을 꺼도 프로그램을 삭제하지 않는다.
+
+| 용도 | 개별 선택 항목 | 의존성과 동작 |
+|---|---|---|
+| 이동·목록 선택 | zoxide, fzf | zoxide를 선택하면 zi에 필요한 fzf도 설치 안내에 포함 |
+| 검색·파일 보기 | ripgrep, fd, bat | Ubuntu에서는 fd와 bat의 명령 이름이 fdfind·batcat일 수 있음 |
+| 개발 기본 | C/C++ 빌드 도구, unzip, Git LFS | LFS 전역 필터를 설정하지 않음. 필요한 저장소에서만 git lfs install --local |
+| 언어 환경 | nvm·Node.js, uv | nvm 경로와 Node 버전 선택. nvm만 있고 해당 Node가 없으면 별도 설치. pip 별칭은 바꾸지 않음 |
+| AI 도구 | Claude Code, Gemini CLI | Claude는 native 설치. Gemini는 Node 20+·npm 필요. 로그인은 별도 |
+| 서비스 도구 | AWS CLI, ngrok | CLI만 설치. 계정 인증·토큰 등록·터널 시작은 별도 |
+
+Oh My Zsh는 셸과 테마 화면에서 선택한다. 없으면 선택한 경로에 설치하는 안내가 나온다.
+GitHub·GitLab CLI는 연결과 서비스의 API 선택을 따른다. Git만 쓰면 설치할 필요가 없다.
+외부 패키지 저장소가 필요한 CLI는 공식 설치 문서 링크를 제공한다.
+
+nvm을 선택하면 설치 안내가 nvm → 선택한 Node 버전 → Gemini 순서로 나온다.
+새 셸은 선택한 Node 버전을 사용한다. Gemini만 선택하고 시스템 Node 20+·npm이 없다면
+먼저 nvm을 선택하라는 안내가 나온다. 다른 도구가 Node를 자동으로 선택하거나 설치하지 않는다.
+npm 전역 패키지는 Node 버전별로 달라서, 버전을 바꿨으면 Gemini 설치 상태를 다시 확인한다.
+
+설치 명령은 `bash bin/install-tool.sh TOOL [NVM_DIR [NODE_VERSION]]` 형태이며 한 도구만 다룬다.
+패키지 관리자가 필요한 설치는 sudo를 요청할 수 있다. Linux의 uv·Claude·AWS·ngrok은
+사용자 경로를 사용한다. 기존 설치의 업그레이드와 서비스 로그인은 별도 작업이다.
+
+zi를 사용하려면 zoxide를 켜고 fzf 설치 안내를 따른 뒤 configure하고 새 zsh를 연다.
+초기화 코드를 .zshrc에 다시 추가할 필요는 없다.
+
+```sh
+python3 bin/dashboard.py configure
+exec zsh
+# 자주 쓰는 폴더를 cd로 몇 번 방문한 뒤
+zi                 # 방문 기록을 골라 이동
+zi dotfiles        # 이름으로 좁힌 뒤 선택
+z dotfiles         # 가장 잘 맞는 기록으로 바로 이동
+```
+
+방문 기록은 각 기기에 저장되며 새 기기에 자동 동기화하지 않는다.
+기존 설정을 읽으면 새 도구는 꺼진 상태로 추가하고, 기존 선택·인증 참조는 보존한다.
+첫 저장 시 이전 설정 파일을 백업한다.
+
 ## 인증 공급 방식
 
 | 용도 | 지원 공급자 | 실제 사용 |
@@ -156,6 +200,7 @@ Git·SSH Include와 shell.zsh를 읽으며, 연결 해제는 `~/.config/dotfiles
 python3 tests/smoke.py
 python3 tests/dashboard.py
 python3 tests/runbook.py
+python3 tests/tools.py
 python3 tests/auth.py
 ./bin/verify.sh
 # 인증 준비를 한 셸에서만 선택적으로 실행

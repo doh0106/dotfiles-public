@@ -15,6 +15,7 @@ import webbrowser
 from urllib.parse import urlsplit
 import configuration as cfg
 import features
+import tool_catalog
 import runbook
 
 REPO=cfg.REPO
@@ -41,7 +42,7 @@ def plan(state):
         ready=shutil.which(command) is not None
         instructions=[]
         if not ready:
-            packages={'git':'git','bash':'bash','zsh':'zsh','ssh':'openssh-client','ssh-add':'openssh-client','ssh-keygen':'openssh-client'}
+            packages={'git':'git','bash':'bash','zsh':'zsh','gh':'gh','ssh':'openssh-client','ssh-add':'openssh-client','ssh-keygen':'openssh-client'}
             if sys.platform=='darwin' and shutil.which('brew') and command in ('gh','glab','bw','zsh'):
                 instructions=[f'command -v {command} >/dev/null 2>&1 || brew install '+('bitwarden-cli' if command=='bw' else command)]
             elif shutil.which('apt-get') and command in packages:instructions=[f'command -v {command} >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y {packages[command]})']
@@ -55,14 +56,7 @@ def plan(state):
     for helper in sorted(helpers):
         command='git-credential-'+helper;ready=shutil.which(command) is not None or (git_exec/command).is_file()
         rows.append(dict(id=command,name=command,installed=ready,steps=['설치됨 · 외부 helper의 보관 정책을 확인하세요.'] if ready else ['설치 안내: '+helper_docs[helper]]))
-    for f in features.DEFINITIONS:
-        if not state['features'][f['id']]['enabled']:continue
-        ready=features.installed(f,state['features']);steps=[]
-        if not ready:
-            if f['id']=='zoxide' and shutil.which('apt-get'):steps=['command -v zoxide >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y zoxide)']
-            else:steps=['설치 안내: '+DOCS.get(f['id'],'OS 패키지 관리자로 '+f['name']+' 설치')]
-        if f['id']=='colors':steps.append('프로젝트 색상은 Ghostty 또는 iTerm2에서 적용됩니다.')
-        rows.append(dict(id=f['id'],name=f['name'],installed=ready,steps=steps or ['설치됨 · 재설치 없이 설정합니다.']))
+    rows.extend(tool_catalog.plan(state,REPO))
     configure=shlex.join(['python3',str(REPO/'bin/dashboard.py'),'configure'])
     return dict(dependencies=rows,configure=configure,workflow=runbook.build(state,rows,REPO,DATA),notes=[
         '저장은 로컬 설정 파일을 생성합니다. 설치·configure·로그인은 사람이 또는 AI가 안내에 따라 실행합니다.',
@@ -85,7 +79,9 @@ def snapshot(state=None,migrated=None,revision=None):
     try:files=cfg.compile(state);validation_error=''
     except (ValueError,TypeError,KeyError) as exc:files={};validation_error=str(exc)
     definitions=copy.deepcopy(features.DEFINITIONS)
-    for f in definitions:f['installed']=features.installed(f,state['features'])
+    for f in definitions:
+        f['installed']=features.installed(f,state['features'])
+        f['dependencies']=tool_catalog.status(f['id'],state)
     return dict(state=state,revision=revision if revision is not None else cfg.revision(),definitions=definitions,plan=plan(state),files=files,environment=platform.node()+' · '+platform.system(),data_directory=str(DATA),auth_status=auth_status(),migration_notice='기존 설정을 새 구조로 불러왔습니다. 저장 전 검토하세요. 첫 저장 시 원본 설정을 백업합니다.' if migrated else '',validation_error=validation_error)
 
 

@@ -48,7 +48,7 @@ def build(state,dependencies,repo,data):
     installed=[d for d in dependencies if d['installed']]
     installation=[]
     for dependency in missing:
-        commands=[];texts=[];links=[]
+        commands=list(dependency.get('commands',[]));texts=[dependency['note']] if dependency.get('note') else [];links=[]
         for instruction in dependency['steps']:
             if instruction.startswith('설치 안내: https://'):links.append(dict(label=dependency['name']+' 공식 설치 안내',url=instruction[len('설치 안내: '):]))
             elif instruction.startswith('command -v '):commands.append(instruction)
@@ -56,6 +56,10 @@ def build(state,dependencies,repo,data):
         installation.append(block(dependency['name']+' 설치 필요',' '.join(texts),commands,links=links))
     if installed:installation.append(block('설치된 도구 · 재설치 생략',', '.join(d['name'] for d in installed)))
     stage('install','필요한 프로그램 준비',str(len(installed))+'개 설치됨 · '+str(len(missing))+'개 설치 필요. 아래에는 없는 프로그램의 설치 명령·문서만 표시합니다.',installation)
+    if state['features']['gitlfs']['enabled']:
+        installation.append(block('Git LFS · 저장소별 설정','설치 후 LFS를 사용할 저장소 안에서만 실행하세요. 전역 필터는 자동 설정하지 않습니다.',['git lfs install --local'],when='해당 저장소에서 Git LFS를 사용할 때만',optional=True))
+    if any(state['features'][key]['enabled'] for key in ('aws','claude','gemini','ngrok')):
+        installation.append(block('서비스 도구의 로그인은 별도','이 안내는 프로그램만 설치합니다. 각 서비스 로그인·토큰 등록·터널 시작은 자동 실행하지 않습니다.'))
     stage('configure','설정 연결 · configure','홈의 관리 설정과 선택 도구를 연결합니다. 이미 설치된 도구는 재설치하지 않으며, 설정을 바꾼 뒤에도 같은 명령을 사용할 수 있습니다.',[block('WSL / macOS / Linux 터미널에서 실행',commands=[shlex.join(['python3',str(repo/'bin/dashboard.py'),'configure'])])])
     stage('shell','새 zsh에서 시작','현재 셸을 새 zsh로 바꿔 선택한 integration을 읽습니다. 기존 셸에서 bws로 키를 로드한 상태라면 먼저 작업을 마치고 세션을 정리하세요.',[block('다음 인증 명령은 새 셸에서 실행',commands=['exec zsh'])])
     if vault_refs:

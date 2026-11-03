@@ -117,8 +117,10 @@ function renderProfiles(){
  explanation(root,'폴더와 서비스는 여러 개씩 연결할 수 있습니다.','한 프로필에서 GitHub SSH와 GitLab HTTPS를 함께 쓸 수 있습니다. linked worktree는 원본 저장소의 Git 관리 디렉터리를 따릅니다.');
 }
 function renderTools(){
- const root=$('page-body');root.replaceChildren();const grid=el('div',undefined,'tool-grid');root.append(grid);
- for(const definition of snapshot.definitions.filter(f=>f.id!=='ohmyzsh')){const f=draft.features[definition.id],body=groupBox(definition.name,grid);switchRow(body,'이 기능 사용',definition.desc,f.enabled,()=>{f.enabled=!f.enabled;mark();renderTools()});body.append(badge(definition.installed?'설치됨 · 설정만 변경':'설치 필요',definition.installed?'green':'amber'));
+ const root=$('page-body');root.replaceChildren();explanation(root,'필요한 도구만 선택','선택 후 저장하면 적용 안내에 미설치 도구와 필요한 의존성의 설치 명령이 나옵니다. 화면의 선택만으로 설치하거나 로그인하지 않습니다. 끄면 프로그램을 삭제하지 않습니다.');
+ const categories={shell:'셸과 이동',navigation:'목록 선택',terminal:'터미널',search:'파일 검색과 읽기',runtime:'언어 실행 환경',development:'개발 기본 도구',ai:'AI 도구',services:'외부 서비스'};const grids={};
+ for(const definition of snapshot.definitions.filter(f=>f.id!=='ohmyzsh')){const category=definition.category;if(!grids[category]){root.append(el('h2',categories[category]||category));grids[category]=el('div',undefined,'tool-grid');root.append(grids[category])}const f=draft.features[definition.id],body=groupBox(definition.name,grids[category]);switchRow(body,'이 기능 사용',definition.desc,f.enabled,()=>{f.enabled=!f.enabled;mark();renderTools()});body.append(badge(definition.installed?'설치됨 · 설정만 변경':'설치 필요',definition.installed?'green':'amber'));
+  for(const dependency of definition.dependencies||[])body.append(el('p',dependency.name+' · '+(dependency.installed?'준비됨':'준비 필요')+' — '+dependency.reason,'note'));
   const fields=el('div');fields.style.marginTop='20px';body.append(fields);for(const x of definition.fields)field(fields,x.label,f.values[x.key],x.options||null,v=>{f.values[x.key]=v;mark()},'tool-'+definition.id+'-'+x.key,x.type||'text');
  }
  root.append(el('p','셸 테마는 ‘셸과 테마’, Git·SSH·HTTPS·API는 ‘연결과 서비스’에서 관리합니다.','note'));

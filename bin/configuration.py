@@ -29,7 +29,9 @@ def new_connection(profile='personal',ident='connection'):
 
 def migrate(raw):
     if not isinstance(raw,dict):raise ValueError('설정 형식 오류')
-    if raw.get('schema')==SCHEMA:return copy.deepcopy(raw),False
+    if raw.get('schema')==SCHEMA:
+        state=copy.deepcopy(raw);state['features']=features.upgrade(state.get('features',{}))
+        return state,state!=raw
     if 'schema' in raw:raise ValueError('지원하지 않는 설정 버전입니다. 원본 설정은 변경하지 않았습니다.')
     state=defaults()
     for name in state['features']:
@@ -238,7 +240,7 @@ def generate(state,expected=None):
         fcntl.flock(lock,fcntl.LOCK_EX)
         if expected is not None and expected!=revision():raise ValueError('다른 화면에서 설정이 바뀌었습니다. 새로 불러온 뒤 다시 검토하세요.')
         before={name:(DATA/name).read_bytes() if (DATA/name).exists() else None for name in [*files,'settings.json']}
-        if SETTINGS.exists() and json.loads(SETTINGS.read_text()).get('schema')!=SCHEMA:
+        if SETTINGS.exists() and migrate(json.loads(SETTINGS.read_text()))[1]:
             backup=DATA/('settings.json.bak.'+datetime.datetime.now().strftime('%Y%m%d%H%M%S%f'));atomic(backup,SETTINGS.read_bytes())
         try:
             for name,text in files.items():atomic(DATA/name,text.encode())
