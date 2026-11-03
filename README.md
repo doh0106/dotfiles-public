@@ -1,4 +1,4 @@
-# dotfiles
+# dotfiles-public
 
 공개 설정 코드를 가져와 로컬 대시보드에서 필요한 기능을 고른다.
 대시보드는 설정 파일과 실행 안내를 만들고, 사람 또는 AI가 안내를 실행한다.
@@ -7,10 +7,10 @@
 ## 시작하기
 
 Git과 Python 3를 준비한 뒤 저장소를 clone한다. Git이 없다면 ZIP으로 받아 풀어도 된다.
-아래 URL은 새 공개 저장소를 배치한 뒤 사용할 주소다. 기존 동명의 비공개 저장소와 혼동하지 않는다.
+공개 저장소는 `doh0106/dotfiles-public`이다. 기존 비공개 `dotfiles` 저장소와 이력을 분리한다.
 
 ```sh
-git clone https://github.com/doh0106/dotfiles.git "$HOME/dotfiles"
+git clone https://github.com/doh0106/dotfiles-public.git "$HOME/dotfiles"
 cd "$HOME/dotfiles"
 python3 bin/dashboard.py
 ```
