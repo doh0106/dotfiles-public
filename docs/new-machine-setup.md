@@ -40,6 +40,8 @@ Bitwarden을 선택했으면 해당 단계에서 로그인·잠금 해제를 하
 ## 4. 공통 서비스 인증 관리 연결
 
 비공개 저장소를 읽을 Git 인증을 준비한 뒤 core를 받는다.
+프로필 없는 연결을 선택했다면 적용 안내에 나온 `git -c include.path=… clone` 접두사를
+아래 clone 명령에도 사용한다. 이 연결의 인증은 모든 폴더에 자동 적용되지 않는다.
 
 ```sh
 git clone https://github.com/doh0106/environment-core.git "$HOME/personal/environment-core"

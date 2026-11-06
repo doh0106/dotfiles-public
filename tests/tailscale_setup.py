@@ -15,7 +15,7 @@ class TailscaleTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.home=Path(self.tmp.name);self.old=(cfg.DATA,cfg.SETTINGS)
         cfg.DATA=self.home/'.config/dotfiles/dashboard';cfg.SETTINGS=cfg.DATA/'settings.json'
-        self.target=dict(alias='example-wsl',host='example.test.ts.net',user='example',account='example@github',client='macos',fingerprints='SHA256:'+'A'*43)
+        self.target=dict(alias='example-wsl',host='example.test.ts.net',user='example',account='example@github',client=ts.default_target()['client'],fingerprints='SHA256:'+'A'*43)
     def tearDown(self):cfg.DATA,cfg.SETTINGS=self.old;self.tmp.cleanup()
     def save(self):return ts.save(self.target,ts.snapshot()['revision'])
     def test_status_read_only_and_save_does_not_touch_ssh_or_main_settings(self):
@@ -53,7 +53,7 @@ class TailscaleTests(unittest.TestCase):
         with self.assertRaises(ValueError):ts.read()
         self.assertEqual(ts.snapshot()['revision'],'unreadable')
     def test_observation_has_fixed_read_only_args_and_does_not_leak_auth_url_or_peers(self):
-        self.save()
+        self.target['client']='macos';self.save()
         response=subprocess.CompletedProcess([],0,json.dumps({'BackendState':'Running','Self':{'UserID':7},'User':{'7':{'LoginName':'example@github'}},'AuthURL':'SECRET_URL','Peer':{'SECRET_PEER':{}}}), 'SECRET_DIAGNOSTIC')
         with patch('tailscale_setup.sys.platform','darwin'),patch('tailscale_setup.shutil.which',return_value='/test/tailscale'),patch('tailscale_setup.subprocess.run',return_value=response) as runner:
             result=ts.observe()
