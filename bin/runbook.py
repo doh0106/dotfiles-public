@@ -25,9 +25,9 @@ def build(state,dependencies,repo,data):
         for p in profiles.values():checks.append(block('작업 프로필 · '+p['name'],p['id']+' · '+p['path']+' · '+p['author']+' <'+p['email']+'>'))
     for c in active:
         api='API: '+c['api']['tool'] if c['api']['enabled'] else 'API 도구 사용 안 함'
-        checks.append(block('연결 · '+c['name'],c['id']+' · 프로필 '+c['profile']+' · '+c['host']+' · '+c['method'].upper()+' · '+api))
+        checks.append(block('연결 · '+c['name'],c['id']+' · 적용 범위 '+(c['profile'] or '프로필 없음 · 연결 ID로 직접 선택')+' · '+c['host']+' · '+c['method'].upper()+' · '+api))
     tool_names=[f['name'] for f in features.DEFINITIONS if state['features'][f['id']]['enabled'] and f['id']!='ohmyzsh']
-    if tool_names:checks.append(block('선택 도구',', '.join(tool_names)))
+    if tool_names:checks.append(block('도구 선택',', '.join(tool_names)))
     stage('review','선택한 환경 확인','켜진 기능과 연결만 이 안내에 포함됩니다. 폴더별 신원, 서비스 접속, API 인증은 각각 확인합니다.',checks or [block('선택 기능 없음','필요한 기능을 고른 뒤 안내를 갱신하세요.')],'overview')
     materials=[]
     for c in active:
@@ -60,7 +60,7 @@ def build(state,dependencies,repo,data):
         installation.append(block('Git LFS · 저장소별 설정','설치 후 LFS를 사용할 저장소 안에서만 실행하세요. 전역 필터는 자동 설정하지 않습니다.',['git lfs install --local'],when='해당 저장소에서 Git LFS를 사용할 때만',optional=True))
     if any(state['features'][key]['enabled'] for key in ('aws','claude','gemini','ngrok')):
         installation.append(block('서비스 도구의 로그인은 별도','이 안내는 프로그램만 설치합니다. 각 서비스 로그인·토큰 등록·터널 시작은 자동 실행하지 않습니다.'))
-    stage('configure','설정 연결 · configure','홈의 관리 설정과 선택 도구를 연결합니다. 이미 설치된 도구는 재설치하지 않으며, 설정을 바꾼 뒤에도 같은 명령을 사용할 수 있습니다.',[block('WSL / macOS / Linux 터미널에서 실행',commands=[shlex.join(['python3',str(repo/'bin/dashboard.py'),'configure'])])])
+    stage('configure','설정 연결 · configure','홈의 관리 설정과 도구 선택를 연결합니다. 이미 설치된 도구는 재설치하지 않으며, 설정을 바꾼 뒤에도 같은 명령을 사용할 수 있습니다.',[block('WSL / macOS / Linux 터미널에서 실행',commands=[shlex.join(['python3',str(repo/'bin/dashboard.py'),'configure'])])])
     stage('shell','새 zsh에서 시작','현재 셸을 새 zsh로 바꿔 선택한 integration을 읽습니다. 기존 셸에서 bws로 키를 로드한 상태라면 먼저 작업을 마치고 세션을 정리하세요.',[block('다음 인증 명령은 새 셸에서 실행',commands=['exec zsh'])])
     if vault_refs:
         stage('vault','Bitwarden 로그인 · 잠금 해제','같은 터미널에서 상태를 확인한 뒤 해당하는 경우 하나만 진행하세요. 이메일·마스터 비밀번호·2FA는 사용자가 직접 입력합니다.',[
@@ -86,7 +86,7 @@ def build(state,dependencies,repo,data):
     verification=[]
     for c in active:
         if c['method']=='ssh' and c['kind']=='git':
-            hostname,port=cfg.host_parts(c['host']);command=['ssh','-F',str(data/('ssh-'+c['profile']+'.config')),'-T']
+            hostname,port=cfg.host_parts(c['host']);command=['ssh','-F',str(data/('ssh-'+c['profile']+'.config' if c['profile'] else 'ssh-connection-'+c['id']+'.config')),'-T']
             if port:command+=['-p',str(port)]
             command+=[c['sshUser']+'@'+hostname];links=[]
             text='처음 연결할 때 서버 host key의 fingerprint를 확인하세요. 서비스가 반환한 인증 계정이 본인 계정인지 확인합니다.'
@@ -96,15 +96,19 @@ def build(state,dependencies,repo,data):
             verification.append(block(c['name']+' · SSH 접속 확인',text,[shlex.join(command)],links=links))
         elif c['kind']=='server':verification.append(block(c['name']+' · SSH 설정 확인','설정만 출력하며 서버에 접속하지 않습니다. 실제 접속 시 서버 신원을 확인하세요.',[shlex.join(['ssh','-G',c.get('sshAlias') or c['id']])]))
         if c['api']['enabled']:verification.append(block(c['name']+' · '+c['api']['tool']+' API 인증 확인','선택한 API 서비스 호스트의 토큰을 해당 CLI 자식 프로세스에만 전달합니다.',[shlex.join(['bw'+c['api']['tool'],'--connection',c['id'],'auth','status'])]))
-        if c['kind']=='git':verification.append(block(c['name']+' · 저장소 설정과 읽기 권한 확인','프로필 폴더 '+profiles[c['profile']]['path']+' 아래에 있는 실제 프로젝트 저장소로 이동한 뒤 실행하세요. origin의 호스트와 '+c['method'].upper()+' 방식이 이 연결과 맞아야 합니다. Git identity 관리를 켰다면 작성자 이메일도 확인하세요.',['git config --get dotfiles.profile','git config --show-origin --get user.email','git remote -v','git ls-remote origin'],when='해당 서비스의 기존 저장소에서 작업할 때만',optional=True))
+        if c['kind']=='git' and c['profile']:verification.append(block(c['name']+' · 저장소 설정과 읽기 권한 확인',(('프로필 폴더 '+profiles[c['profile']]['path']+' 아래의 ' ) if c['profile'] else '연결별 설정을 적용한 ' )+'실제 프로젝트 저장소로 이동한 뒤 실행하세요. origin의 호스트와 '+c['method'].upper()+' 방식이 이 연결과 맞아야 합니다. Git identity 관리를 켰다면 작성자 이메일도 확인하세요.',['git config --get dotfiles.profile','git config --show-origin --get user.email','git remote -v','git ls-remote origin'],when='해당 서비스의 기존 저장소에서 작업할 때만',optional=True))
+    for c in active:
+        if c['kind']=='git' and not c['profile']:
+            policy=str(data/('connection-'+c['id']+'.gitconfig'))
+            verification.append(block(c['name']+' · 프로필 없이 기존 저장소에서 사용','이 명령은 이 연결을 명시한 경우에만 적용합니다. 임의 폴더에 인증을 자동 주입하지 않습니다.',[shlex.join(['git','-c','include.path='+policy,'ls-remote','origin'])],optional=True))
     if verification:stage('verify','접속과 적용값 확인','인증 준비와 서버 접근 성공은 별개입니다. 실제 접속 확인은 여기의 명령을 터미널에서 직접 실행합니다.',verification)
     clone=[]
     for c in active:
         if c['kind']!='git':continue
         hostname,port=cfg.host_parts(c['host'])
         url=('ssh://'+c['sshUser']+'@'+c['host']+'/OWNER/REPO.git' if port else c['sshUser']+'@'+hostname+':OWNER/REPO.git') if c['method']=='ssh' else 'https://'+c['host']+'/OWNER/REPO.git'
-        command=shlex.join(['git','-c','include.path='+str(data/('profile-'+c['profile']+'.gitconfig')),'clone',url,str(Path(profiles[c['profile']]['path']).expanduser()/'REPO')])
-        clone.append(block(c['name']+' · 최초 clone 예시','아직 저장소가 없어서 gitdir 조건이 적용되기 전이므로 프로필 include를 한 번 명시합니다. OWNER/REPO와 대상 폴더를 실제 값으로 바꾼 뒤 실행하세요.',[command],when='새 저장소가 필요할 때만',optional=True,example=True))
+        command=shlex.join(['git','-c','include.path='+str(data/('profile-'+c['profile']+'.gitconfig' if c['profile'] else 'connection-'+c['id']+'.gitconfig')),'clone',url,str(Path(profiles[c['profile']]['path']).expanduser()/'REPO') if c['profile'] else '/PATH/TO/REPO'])
+        clone.append(block(c['name']+' · 최초 clone 예시','선택한 연결의 설정 파일을 명시합니다. 프로필이 없으면 폴더 자동 적용이 없으므로 기존 저장소에서도 git -c include.path=… 명령을 사용하거나 해당 저장소의 로컬 include로 연결하세요. OWNER/REPO와 대상 폴더는 실제 값으로 바꾸세요.',[command],when='새 저장소가 필요할 때만',optional=True,example=True))
     if clone:stage('clone','필요할 때만 새 저장소 가져오기','현재 환경 설정만 확인한다면 이 단계는 건너뛰세요.',clone)
     if refs:
         commands=['bwe']+[shlex.join(['unset',credentials[ref]['variable']]) for ref in sorted(env_refs)]

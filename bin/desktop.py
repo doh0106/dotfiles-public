@@ -78,7 +78,7 @@ def serve(instance, idle_seconds):
     threading.Thread(target=idle_monitor,daemon=True).start()
     try:server.serve_forever(poll_interval=0.2)
     finally:
-        finished.set();server.server_close()
+        finished.set();server.server_close();dashboard.bridge.close()
         try:
             if json.loads(STATE.read_text()).get('instance')==instance:STATE.unlink()
         except (OSError,ValueError):pass

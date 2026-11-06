@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Credential routing for SSH, HTTPS Git and service API clients. No secret files."""
 import argparse
+import errno
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 from configuration import endpoint,host_parts
 
 DATA=Path.home()/'.config/dotfiles/dashboard'
@@ -22,7 +25,7 @@ def configuration():
         data=json.loads((DATA/'profiles.json').read_text())
         if data.get('schema')!=3:raise RuntimeError('인증 설정을 새 형식으로 생성해야 합니다. dashboard.py configure를 실행하세요.')
         return data
-    except (OSError,ValueError):raise RuntimeError('대시보드에서 프로필과 연결을 저장하고 configure하세요.') from None
+    except (OSError,ValueError):raise RuntimeError('대시보드에서 연결을 저장하고 적용하세요. 프로필 없이도 --connection ID로 선택할 수 있습니다.') from None
 
 
 def choose(config, explicit=None):
@@ -59,6 +62,40 @@ def keys():
     return {' '.join(line.split()[:2]) for line in result.stdout.splitlines() if len(line.split())>=2}
 
 
+def derive_public(value):
+    """OpenSSH reads a 0600 FIFO; key bytes stay in the kernel pipe, never a regular file.
+
+    macOS can give anonymous stdin pipes mode 0660, which ssh-keygen correctly rejects.
+    Establish the private pipe permissions before starting the key reader.
+    """
+    if len(value.encode())>131072:raise RuntimeError('SSH 개인키 입력 크기를 확인하세요.')
+    with tempfile.TemporaryDirectory(prefix='dotfiles-key-pipe-') as directory:
+        path=Path(directory)/'input';os.mkfifo(path,0o600)
+        process=subprocess.Popen(['ssh-keygen','-y','-P','','-f',str(path)],
+            stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        descriptor=None
+        try:
+            deadline=time.monotonic()+5
+            while descriptor is None:
+                try:descriptor=os.open(path,os.O_WRONLY|os.O_NONBLOCK)
+                except OSError as error:
+                    if error.errno!=errno.ENXIO or process.poll() is not None or time.monotonic()>deadline:
+                        raise RuntimeError('개인키에서 공개키를 확인하지 못했습니다.') from None
+                    time.sleep(.01)
+            os.set_blocking(descriptor,True)
+            material=memoryview((value+'\n').encode())
+            while material:material=material[os.write(descriptor,material):]
+            os.close(descriptor);descriptor=None
+            output,diagnostic=process.communicate(timeout=5)
+            return subprocess.CompletedProcess(process.args,process.returncode,output,'')
+        except (OSError,subprocess.TimeoutExpired):
+            raise RuntimeError('개인키에서 공개키를 확인하지 못했습니다.') from None
+        finally:
+            if descriptor is not None:os.close(descriptor)
+            if process.poll() is None:process.kill()
+            process.communicate()
+
+
 def add(item, kind, lifetime, public_path=None):
     before=keys();expected=None
     if public_path:
@@ -73,7 +110,7 @@ def add(item, kind, lifetime, public_path=None):
     try:
         # Validate before ssh-add so a mismatched vault item cannot reset the TTL
         # of a different identity already present in a shared agent.
-        derived=run(['ssh-keygen','-y','-P','','-f','/dev/stdin'],input=value+'\n')
+        derived=derive_public(value)
         public=' '.join(derived.stdout.split()[:2])
         if derived.returncode or not public:raise RuntimeError('개인키에서 공개키를 확인하지 못했습니다. 추가 passphrase가 필요한 키는 기존 agent에서 준비하세요.')
         if expected and public!=expected:raise RuntimeError('Bitwarden 키와 공개키가 다릅니다. agent에 키를 추가하지 않았습니다.')
@@ -95,7 +132,9 @@ def selection(config, explicit=None, connection=None, tool=None, https_host=None
         if not selected:raise RuntimeError('활성 연결을 찾을 수 없습니다.')
         if explicit and explicit!=selected['profile']:raise RuntimeError('프로필과 연결이 일치하지 않습니다.')
         explicit=selected['profile']
-    name,profile=choose(config,explicit)
+    if connection and not explicit:
+        name,profile='',dict(name='직접 선택한 연결',directory='')
+    else:name,profile=choose(config,explicit)
     candidates=[c for c in config['connections'].values() if c['profile']==name]
     if connection:candidates=[c for c in candidates if c['id']==connection]
     if tool:candidates=[c for c in candidates if c['api']['enabled'] and c['api']['tool']==tool]

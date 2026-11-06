@@ -1,0 +1,31 @@
+/* Shared controls and explanation; host owns panel placement. */
+.design-inspector{font-family:system-ui,sans-serif;font-size:var(--di-font-size,14px);color:var(--di-text,#365775)}
+.design-inspector button{font:inherit;cursor:pointer;padding:10px;border:1px solid var(--di-border,#c9d7e6);border-radius:7px;background:var(--di-surface,#f8fbff);color:inherit}
+.design-inspector :is(button,select,input,summary,a):focus-visible{outline:2px solid var(--di-accent,#315d92);outline-offset:3px}
+.design-inspector h2{font-size:var(--di-heading-size,16px);margin:0 0 12px}
+.design-inspector .explore-modes{display:flex;gap:5px}
+.design-inspector .explore-modes button{font-size:var(--di-small-size,13px);padding:9px 10px;flex:1}
+.design-inspector .explore-modes button[aria-pressed=true]{background:var(--di-accent,#315d92);color:white;border-color:var(--di-accent,#315d92)}
+.design-inspector #mode-description{font-size:var(--di-small-size,13px);color:var(--di-muted,#627b96);line-height:1.7;margin:10px 0 16px}
+.design-inspector .control-label{font-size:var(--di-small-size,13px);font-weight:650;display:grid;gap:7px;margin-bottom:18px}
+.design-inspector .control-label select{font:inherit;padding:9px;background:#fff;border:1px solid #b8c9dc;border-radius:6px;color:var(--di-text,#365775);width:100%}
+.design-inspector fieldset{border:0;border-top:1px solid var(--di-border,#c9d7e6);padding:15px 0 5px;margin:10px 0}
+.design-inspector legend{font-size:var(--di-font-size,14px);font-weight:700;padding:0 6px 0 0}
+.design-inspector fieldset label{display:flex;align-items:center;gap:7px;font-size:var(--di-font-size,14px);margin:0 0 8px;padding:8px;border:1px solid var(--di-border,#c9d7e6);border-radius:6px;background:var(--di-surface,#f8fbff);cursor:pointer}
+.design-inspector fieldset label:has(:checked){border-color:#708fb4;background:#e1ebf8}
+.design-inspector input{accent-color:var(--di-accent,#315d92)}
+.design-inspector fieldset p{font-size:var(--di-small-size,13px);line-height:1.7;color:var(--di-muted,#627b96);margin:10px 0}
+.design-inspector .experiment-actions{display:grid;gap:8px;border-top:1px solid var(--di-border,#c9d7e6);padding-top:16px;margin-top:12px}
+.design-inspector .experiment-actions button{font-size:var(--di-small-size,13px);text-align:left}
+.design-inspector #config-status{font-size:var(--di-small-size,13px);line-height:1.7;color:#45678a}
+.design-inspector .experiment-footnote{font-size:var(--di-caption-size,12px);color:#758ba4;margin-top:18px}
+
+.design-inspector [hidden]{display:none!important}
+.design-inspector input:disabled{cursor:not-allowed;opacity:.55}
+.design-inspector .unavailable-reason{display:block;font-size:var(--di-caption-size,12px);line-height:1.5;margin-top:4px;color:#647184}
+
+.design-inspector .design-explanation{margin:10px 0 4px;border:1px solid var(--di-border,#c9d7e6);border-radius:7px;background:var(--di-surface,#f8fbff);padding:8px 10px}
+.design-inspector .design-explanation summary{cursor:pointer;font-size:var(--di-small-size,13px);font-weight:650;color:var(--di-text,#365775)}
+.design-inspector .design-explanation-body p{margin:9px 0;font-size:var(--di-small-size,13px);line-height:1.6}
+.design-inspector .design-explanation-body ul{padding-left:18px;margin:10px 0;font-size:var(--di-small-size,13px);line-height:1.6}
+.design-inspector .design-explanation-body a{font-size:var(--di-small-size,13px)}
