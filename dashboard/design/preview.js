@@ -35,6 +35,7 @@
  const observer=new MutationObserver(()=>syncProduct());observer.observe($('page-body'),{childList:true,subtree:true});
  function reveal(id){
   const destination={detail:'connections',help:'overview'}[id];if(destination&&view!==destination)navigate(destination);
+  if(id==='detail'&&snapshot.design_preview&&!current()&&draft.connections.length){chosen=draft.connections[0].id;renderConnections();}
   let target=id==='navigation'?(window.innerWidth<=720?$('mobile-nav'):document.querySelector('.sidebar')):id==='detail'?document.querySelector('#page-body .inspector'):document.querySelector('#page-body .design-help, #page-body .explain');
   if(!target)return;
   all('.design-highlight').forEach(node=>node.classList.remove('design-highlight'));target.classList.add('design-highlight');

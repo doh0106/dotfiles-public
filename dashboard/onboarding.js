@@ -6,7 +6,7 @@ const setupSteps=[
  {id:'appearance',title:'셸과 테마 선택',view:'appearance',text:'Oh My Zsh와 테마를 쓸지 정하세요. 기본 셸을 그대로 사용해도 됩니다.'},
  {id:'tools',title:'필요한 도구 선택',view:'tools',text:'이동·검색·언어 도구 중 필요한 것만 켜세요. 설치 명령은 마지막 적용 단계에 나옵니다.'},
  {id:'profiles',title:'작업 폴더와 Git 작성자 설정',view:'profiles',text:'개인·회사 프로젝트 폴더와 Git 이름·이메일을 정하세요. Git 작성자 기능을 끄고 진행할 수도 있습니다.'},
- {id:'connections',title:'Git · SSH 접속 설정',view:'connections',text:'Git 호스트·SSH 서버의 접속 방식과 키·토큰의 보관 위치를 지정하세요. 접속이 필요 없으면 추가하지 않아도 됩니다.'}
+ {id:'connections',title:'저장소 · 서버 접속 설정',view:'connections',text:'Git 호스트·SSH 서버의 접속 방식과 키·토큰의 보관 위치를 지정하세요. 접속이 필요 없으면 추가하지 않아도 됩니다.'}
 ];
 function setupSection(state,id){
  if(id==='appearance')return state.features.ohmyzsh;

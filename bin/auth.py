@@ -25,7 +25,7 @@ def configuration():
         data=json.loads((DATA/'profiles.json').read_text())
         if data.get('schema')!=3:raise RuntimeError('인증 설정을 새 형식으로 생성해야 합니다. dashboard.py configure를 실행하세요.')
         return data
-    except (OSError,ValueError):raise RuntimeError('대시보드에서 프로필과 연결을 저장하고 configure하세요.') from None
+    except (OSError,ValueError):raise RuntimeError('대시보드에서 연결을 저장하고 적용하세요. 프로필 없이도 --connection ID로 선택할 수 있습니다.') from None
 
 
 def choose(config, explicit=None):
@@ -132,7 +132,9 @@ def selection(config, explicit=None, connection=None, tool=None, https_host=None
         if not selected:raise RuntimeError('활성 연결을 찾을 수 없습니다.')
         if explicit and explicit!=selected['profile']:raise RuntimeError('프로필과 연결이 일치하지 않습니다.')
         explicit=selected['profile']
-    name,profile=choose(config,explicit)
+    if connection and not explicit:
+        name,profile='',dict(name='직접 선택한 연결',directory='')
+    else:name,profile=choose(config,explicit)
     candidates=[c for c in config['connections'].values() if c['profile']==name]
     if connection:candidates=[c for c in candidates if c['id']==connection]
     if tool:candidates=[c for c in candidates if c['api']['enabled'] and c['api']['tool']==tool]

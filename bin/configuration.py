@@ -148,8 +148,8 @@ def validate(state):
     seen=set();ssh_hosts=set()
     for c in state['connections']:
         if set(c) not in ({'id','name','profile','provider','host','kind','enabled','method','sshUser','publicKey','credential','api'},{'id','name','profile','provider','host','kind','enabled','method','sshUser','publicKey','credential','api','sshAlias'}):raise ValueError('연결 항목 형식 오류')
-        for k in ('name','profile','provider','host','kind','method','sshUser','publicKey','credential'):string(c[k],'연결 '+k)
-        if type(c['enabled']) is not bool or c['profile'] not in profiles:raise ValueError('연결의 프로필을 확인하세요.')
+        for k in ('name','profile','provider','host','kind','method','sshUser','publicKey','credential'):string(c[k],'연결 '+k,k=='name')
+        if type(c['enabled']) is not bool or (c['profile'] and c['profile'] not in profiles):raise ValueError('연결의 프로필을 확인하세요.')
         if c['provider'] not in ('github','gitlab','generic') or c['method'] not in ('ssh','https') or c['kind'] not in ('git','server'):raise ValueError('지원하지 않는 서비스·통신 방식')
         if set(c['api']) not in ({'enabled','tool','credential'},{'enabled','tool','credential','host'}) or type(c['api']['enabled']) is not bool or c['api']['tool'] not in ('gh','glab','none'):raise ValueError('API 설정 형식 오류')
         string(c.get('sshAlias',''),'SSH 서버 별칭')
@@ -157,11 +157,11 @@ def validate(state):
         string(c['api']['credential'],'API 인증 참조')
         string(c['api'].get('host',''),'API 서비스 호스트')
         if not c['enabled']:continue
-        if not profiles[c['profile']]['enabled']:raise ValueError('비활성 프로필에 연결을 활성화할 수 없습니다.')
+        if c['profile'] and not profiles[c['profile']]['enabled']:raise ValueError('비활성 프로필에 연결을 활성화할 수 없습니다.')
         hostname,port=host_parts(c['host'])
         if c['kind']=='git':
             key=(c['profile'],endpoint(c['host'],c['method']),c['method'])
-            if key in seen:raise ValueError('같은 프로필·호스트·Git 방식의 연결이 중복됩니다.')
+            if c['profile'] and key in seen:raise ValueError('같은 프로필·호스트·Git 방식의 연결이 중복됩니다.')
             seen.add(key)
         if c['method']=='ssh':
             path(c['publicKey'],'공개키 경로')
@@ -171,7 +171,7 @@ def validate(state):
             if value['source']=='bitwarden' and value['kind'] not in ('note','sshkey'):raise ValueError('SSH 키는 note 또는 sshkey 형식입니다.')
             if c['kind']=='git':
                 key=(c['profile'],hostname)
-                if key in ssh_hosts:raise ValueError('한 프로필에서 같은 SSH 호스트에 여러 키를 적용하려면 프로필을 분리하세요.')
+                if c['profile'] and key in ssh_hosts:raise ValueError('한 프로필에서 같은 SSH 호스트에 여러 키를 적용하려면 프로필을 분리하세요.')
                 ssh_hosts.add(key)
         elif c['kind']=='server':raise ValueError('일반 SSH 서버 연결은 SSH 방식을 사용하세요.')
         elif c['credential']:
@@ -193,6 +193,25 @@ def compile(state):
     git='# Generated identities and connection policies\n'
     if state['git']['enabled'] and state['git']['blockUnclassified']:git+='[user]\n    name =\n    email =\n    useConfigOnly = true\n'
     runtime=dict(schema=SCHEMA,git_enabled=state['git']['enabled'],profiles={},connections={c['id']:c for c in active},credentials=creds,lifetime=state['session']['keyLifetime'])
+    # Connections without a folder profile are explicit opt-in policies, never
+    # ambient global credentials. They can be chosen with --connection ID.
+    for c in active:
+        if c['profile'] or c['kind']!='git':continue
+        text='# Explicit connection policy: '+c['id']+'\n'
+        if c['method']=='ssh':
+            hostname,port=host_parts(c['host']);sshfile='ssh-connection-'+c['id']+'.config'
+            ssh='Host '+hostname+'\n    HostName '+hostname+'\n    User '+c['sshUser']+'\n    IdentitiesOnly yes\n    IdentityFile '+json.dumps(str(Path(c['publicKey']).expanduser()),ensure_ascii=False)+'\n'
+            if port:ssh+='    Port '+str(port)+'\n'
+            files[sshfile]=ssh+'Host *\nInclude ~/.ssh/config\n'
+            text+='[core]\n    sshCommand = '+json.dumps(shlex.join(['ssh','-F',str(DATA/sshfile)]),ensure_ascii=False)+'\n'
+        elif c['credential']:
+            cred=creds[c['credential']]
+            text+='[credential '+json.dumps('https://'+c['host'],ensure_ascii=False)+']\n    helper =\n'
+            if cred['source']=='git-helper':text+='    helper = '+cred['helper']+'\n'
+            else:
+                command='!'+shlex.join(['python3',str(REPO/'bin/auth.py'),'credential','--connection',c['id']])
+                text+='    helper = '+json.dumps(command,ensure_ascii=False)+'\n'
+        files['connection-'+c['id']+'.gitconfig']=text
     for p in state['profiles']:
         if not p['enabled']:continue
         runtime['profiles'][p['id']]=dict(directory=str(Path(p['path']).expanduser().resolve()),name=p['name'])
