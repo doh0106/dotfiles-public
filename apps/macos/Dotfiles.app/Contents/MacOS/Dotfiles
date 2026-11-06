@@ -1,0 +1,27 @@
+#!/bin/bash
+set -euo pipefail
+bundle="$(cd "$(dirname "$0")/.." && pwd -P)"
+if [[ -f "$bundle/Resources/repository-path" ]];then
+  IFS= read -r repo < "$bundle/Resources/repository-path"
+else
+  repo="$(cd "$bundle/../../../.." && pwd -P)"
+fi
+error_dialog() {
+  /usr/bin/osascript - "$1" <<'APPLESCRIPT'
+on run argv
+  display dialog (item 1 of argv) with title "Dotfiles" buttons {"확인"} default button 1 with icon caution
+end run
+APPLESCRIPT
+}
+if [[ ! -f "$repo/bin/desktop.py" ]];then
+  error_dialog 'dotfiles 폴더를 찾지 못했습니다. 현재 저장소의 Install Dotfiles.command를 다시 실행해 주세요.';exit 1
+fi
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+python=''
+for candidate in /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3;do
+  if [[ -x "$candidate" ]] && "$candidate" -c 'import sys;sys.exit(sys.version_info < (3,9))' >/dev/null 2>&1;then python="$candidate";break;fi
+done
+if [[ -z "$python" ]];then
+  error_dialog 'Python 3.9 이상이 필요합니다. python.org에서 Python 3를 설치하거나 Homebrew로 설치한 뒤 앱을 다시 열어주세요.';exit 1
+fi
+if ! result="$("$python" "$repo/bin/desktop.py" 2>&1)";then error_dialog "$result";exit 1;fi

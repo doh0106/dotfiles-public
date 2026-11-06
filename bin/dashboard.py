@@ -96,7 +96,7 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         try:
             if path=='/api/state':self.reply(200,snapshot())
-            elif path in ('/','/index.html','/app.js','/style.css'):
+            elif path in ('/','/index.html','/app.js','/desktop.js','/style.css'):
                 file=REPO/'dashboard'/('index.html' if path in ('/','/index.html') else path[1:]);self.reply(200,file.read_bytes(),{'html':'text/html','js':'application/javascript','css':'text/css'}[file.suffix[1:]]+'; charset=utf-8')
             else:self.reply(404,{'error':'찾을 수 없습니다.'})
         except (ValueError,OSError,KeyError,TypeError) as exc:self.reply(400,{'error':'설정 읽기 실패: '+str(exc)})

@@ -10,8 +10,9 @@ Git과 Python 3를 준비한 뒤 저장소를 clone한다. Git이 없다면 ZIP�
 공개 저장소는 `doh0106/dotfiles-public`이다. 기존 비공개 `dotfiles` 저장소와 이력을 분리한다.
 
 ```sh
-git clone https://github.com/doh0106/dotfiles-public.git "$HOME/dotfiles"
-cd "$HOME/dotfiles"
+mkdir -p "$HOME/personal"
+git clone https://github.com/doh0106/dotfiles-public.git "$HOME/personal/dotfiles"
+cd "$HOME/personal/dotfiles"
 python3 bin/dashboard.py
 ```
 
@@ -19,6 +20,62 @@ python3 bin/dashboard.py
 Node.js·Bitwarden·zsh가 없어도 대시보드부터 열 수 있다. 화면은 이 서버를 실행한 OS의 설정을 다룬다.
 `file://` HTML만 열면 설정 API를 사용할 수 없다. 고정 포트는 `--port 37691`, 종료는 Ctrl-C다.
 서버는 127.0.0.1에만 바인딩하며 같은 출처의 저장 요청만 허용한다.
+
+## 앱 아이콘으로 열기
+
+매번 Python 명령을 입력하는 대신 앱 실행기를 사용할 수 있다. Python 3.9 이상은 기기에
+한 번 설치되어 있어야 한다. 실행기가 서버를 시작하고, Chrome·Edge가 있으면 별도 앱 창으로,
+없으면 기본 브라우저로 대시보드를 연다. Python을 포함한 독립 실행 바이너리는 아니다.
+
+| 환경 | 처음 한 번 | 이후 실행 | 관리 대상 |
+|---|---|---|---|
+| macOS | `apps/macos/Install Dotfiles.command` 더블클릭 | `~/Applications/Dotfiles.app` 더블클릭 또는 Dock에 추가 | 해당 Mac의 홈 설정 |
+| Windows | WSL·Python 준비 후 `apps/windows/Install Dotfiles.cmd` 더블클릭 | 시작 메뉴·바탕 화면의 **Dotfiles** | 선택한 WSL 배포판의 홈 설정 |
+
+Mac 실행기는 Apple Silicon·Intel의 일반적인 Python 설치 경로를 찾는다. 배포용 서명·공증은
+하지 않았으며 Mac 실기기 실행은 별도 확인이 필요하다. Windows는 네이티브 PowerShell/Git 설정을
+관리하는 앱이 아니라 WSL용 실행기다. WSL 서버는 127.0.0.1에서만 실행된다.
+
+Windows에서 기본 WSL이 아닌 배포판이나 별도 저장소 경로를 사용할 때는 최초 설치 시 지정한다.
+아래 명령의 배포판·사용자·폴더는 실제 값으로 바꾼다. 이후에는 생성된 아이콘만 누르면 된다.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\apps\windows\Dotfiles.ps1 -Install -Distro Ubuntu-24.04 -Repository /home/USER/personal/dotfiles
+```
+
+실행기는 저장소 위치를 기억하므로 폴더를 옮겼다면 설치 실행기를 다시 실행한다.
+앱 실행 자체는 프로그램 설치·configure·Bitwarden 로그인을 수행하지 않는다.
+계속 켜져 있는 터미널의 인증 세션을 앱에 전달하지 않으며, 인증은 기존 적용 안내를 따른다.
+
+화면 아래 **앱 서버 종료**는 로컬 서버를 종료한다. 저장하지 않은 초안이 있으면 확인한다.
+아이콘을 여러 번 눌러도 같은 저장소의 앱 서버를 재사용한다. 창을 모두 닫거나 창에서 5분간
+연결 신호를 받지 못하면 서버가 자동 종료된다. 잠자기 등으로 종료되었으면 아이콘으로 다시 연다.
+다른 창에도 같은 서버가 열려 있다면 서버 종료가 함께 영향을 준다.
+
+일반 `python3 bin/dashboard.py` 실행은 기존 동작을 유지하고 앱 종료 버튼을 표시하지 않는다.
+앱의 상태·최근 실행 로그는 `~/.local/state/dotfiles-app/` 아래에 저장한다.
+문제가 생겼을 때 화면 없이 실행·종료를 확인할 수 있다.
+
+```sh
+python3 bin/desktop.py launch --no-open
+python3 bin/desktop.py stop
+```
+
+## 저장소 위치와 업데이트
+
+사용할 checkout은 `~/personal/dotfiles` 하나로 유지한다. 셸·Git 설정은 이 checkout의 파일에
+연결하고, 대시보드에서 저장한 개인 선택은 `~/.config/dotfiles/dashboard/`에 별도로 보관한다.
+코드 변경은 이 checkout에서 커밋한 뒤 원격과 동기화한다. 다른 로컬 사본을 origin으로 연결하지 않는다.
+
+```sh
+cd "$HOME/personal/dotfiles"
+git remote -v
+git status
+# 미커밋 변경을 정리한 뒤 원격 변경을 가져온다.
+git pull --ff-only origin main
+```
+
+WSL을 외부에서 접속하는 선택 기능은 [WSL SSH 안내](docs/wsl-ssh.md)를 참고한다.
 
 ## 설정을 나누는 기준
 
@@ -201,6 +258,7 @@ python3 tests/smoke.py
 python3 tests/dashboard.py
 python3 tests/runbook.py
 python3 tests/tools.py
+python3 tests/desktop.py
 python3 tests/auth.py
 ./bin/verify.sh
 # 인증 준비를 한 셸에서만 선택적으로 실행
