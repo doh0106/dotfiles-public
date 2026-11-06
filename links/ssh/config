@@ -1,4 +1,5 @@
 # Local service connections and optional private overlay.
+Include ~/.config/dotfiles/tailscale/ssh.config
 Include ~/.config/dotfiles/dashboard/ssh.config
 Include ~/.config/dotfiles/private/ssh/config
 Host *

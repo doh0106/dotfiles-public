@@ -6,6 +6,10 @@
 
 ## 시작하기
 
+빈 컴퓨터에서 전체 환경을 준비할 때는 [새 컴퓨터 설정 순서](docs/new-machine-setup.md)를 따른다.
+호스트 설정, 서비스 인증, 컨테이너 개발, Tailscale 원격 접속을 단계별로 연결한다.
+
+
 Git과 Python 3를 준비한 뒤 저장소를 clone한다. Git이 없다면 ZIP으로 받아 풀어도 된다.
 공개 저장소는 `doh0106/dotfiles-public`이다. 기존 비공개 `dotfiles` 저장소와 이력을 분리한다.
 
@@ -82,12 +86,12 @@ WSL을 외부에서 접속하는 선택 기능은 [WSL SSH 안내](docs/wsl-ssh.
 | 영역 | 정하는 것 | 다른 영역과의 관계 |
 |---|---|---|
 | 셸과 테마 | 설치된 Oh My Zsh, 테마, 프레임워크 경로 | 서비스 로그인 없이 사용 가능 |
-| 선택 도구 | 이동·검색·빌드·런타임·AI·서비스 도구를 개별 선택 | 설치 여부와 활성화는 별개 |
+| 도구 선택 | 이동·검색·빌드·런타임·AI·서비스 도구를 개별 선택 | 설치 여부와 활성화는 별개 |
 | 작업 프로필 | 폴더 범위, 커밋 이름·이메일 | `gitdir`로 선택. 접속 계정을 의미하지 않음 |
-| 연결과 서비스 | 프로필, 서비스 제품, 호스트, Git SSH/HTTPS 또는 SSH 서버 | 같은 프로필에 여러 서비스와 방식을 연결 가능 |
-| 인증 참조 | 공급자, 항목 이름·형식, 공개키 경로 등 | 개인키·토큰 값은 화면에 입력하지 않음 |
+| Git · SSH 연결 | Git 호스트·SSH 서버, 접속 방식, 인증 참조, gh/glab 사용 | 같은 작업 프로필에 여러 접속을 추가 가능 |
+| Git · SSH 인증 참조 | 공급자, 항목 이름·형식, 공개키 경로 등 | 개인키·토큰 값은 화면에 입력하지 않음 |
 | API 도구 | GitHub의 gh, GitLab의 glab, 별도 API 토큰 | Git SSH/HTTPS와 독립적으로 켜거나 끔 |
-| 키와 세션 | 새 SSH 키 TTL, 사용 후 정리 | 토큰의 서버 만료·폐기와는 별개 |
+| SSH 키 · 인증 세션 | 새 SSH 키 TTL, 사용 후 정리 | 토큰의 서버 만료·폐기와는 별개 |
 
 예를 들어 `personal` 폴더 프로필에 GitHub SSH와 GitLab HTTPS를 함께 연결할 수 있다.
 회사 프로필이나 비공개 overlay는 필요할 때만 추가한다. 처음부터 회사 설정을 요구하지 않는다.
@@ -95,11 +99,35 @@ WSL을 외부에서 접속하는 선택 기능은 [WSL SSH 안내](docs/wsl-ssh.
 GitHub Enterprise와 GitLab Self-Managed도 호스트를 지정한다. SSH 접속 호스트와 API 서비스 호스트가
 다르면 API 탭에서 서비스 호스트를 따로 지정한다. API는 HTTPS와 도메인 루트 구성을 지원한다.
 
+## 대시보드 메뉴
+
+| 메뉴 | 관리하는 것 |
+|---|---|
+| 처음 설정 · 진행 상황 | 지금 할 일, 6단계 순서, 선택·저장·적용 확인 |
+| 셸과 테마 | zsh·Oh My Zsh·테마 설정 |
+| 도구 선택 | 필요한 도구 활성화와 설치 준비 상태 |
+| 작업 프로필 | 프로젝트 폴더별 Git 커밋 이름·이메일과 접속 설정 범위 |
+| Git · SSH 연결 | Git 저장소·SSH 서버 접속과 선택적인 gh/glab API 인증 |
+| Git · SSH 인증 참조 | 위 접속에 사용할 공급자·항목·공개키 경로. 실제 비밀값 보관소는 아님 |
+| SSH 키 · 인증 세션 | 새 SSH 키 유지 시간, Bitwarden·agent 세션 정리 안내 |
+| 서비스 인증 | Jira·Confluence·Google 계정 설정과 별도 로그인·검증 창 |
+| 원격 접속 · Tailscale | 새 컴퓨터의 설치·로그인·SSH 별칭·집 WSL 접속 안내와 진행 기록 |
+| 개발 환경 상태 | 선택한 프로젝트의 Dev Container 구성·컨테이너 상태 조회 |
+| 적용 안내 | 저장한 호스트 설정을 적용할 설치·configure·Git/SSH 인증 명령 |
+
+서비스 인증과 개발 환경 상태는 선택 설치한 environment-core를 사용한다.
+적용 안내는 서비스 로그인이나 컨테이너 생성을 대신 실행하지 않는다.
+
 ## 화면에서 작업하기
+
+처음 기기를 설정할 때는 **처음 설정 · 진행 상황**의 순서를 따른다. 각 설정 화면에서
+선택을 확인하고 다음 단계로 이동한다. 저장과 실제 적용은 따로 표시한다.
+[처음 설정 안내](docs/first-run-setup.md)에 진행 기록과 선택 기능을 설명했다.
+
 
 1. **셸과 테마**에서 원하는 프레임워크·테마를 고른다. 글꼴·글자 크기 조절은 화면 미리보기 전용이다.
 2. **작업 프로필**에서 서로 겹치지 않는 프로젝트 폴더와 Git 이름·이메일을 정한다.
-3. **연결과 서비스**에서 서비스·호스트·Git 방식을 정하고 필요한 인증 참조를 연결한다.
+3. **Git · SSH 연결**에서 Git 호스트·SSH 서버와 접속 방식을 정하고 필요한 인증 참조를 연결한다.
    관계가 헷갈리면 선택한 연결의 맵을 펼친다. SSH 서버도 같은 화면에서 별도 종류로 추가한다.
 4. 필요하다면 **API** 탭에서 gh/glab와 토큰 참조를 켠다. Git만 사용할 때는 꺼둔다.
 5. **변경 검토 → 저장 · 설정 파일 생성**으로 로컬 파일을 생성한다.
@@ -153,9 +181,9 @@ git remote set-url origin https://YOUR-HOST/OWNER/REPO.git
 python3 bin/dashboard.py plan  # 화면 없이 저장된 설정의 적용 안내 출력
 ```
 
-## 선택 도구 설치와 zi
+## 도구 선택 설치와 zi
 
-선택 도구 화면에서 필요한 항목만 켠 뒤 저장하고 적용 안내를 따른다.
+도구 선택 화면에서 필요한 항목만 켠 뒤 저장하고 적용 안내를 따른다.
 저장·configure는 설치 프로그램을 실행하지 않는다. 안내의 명령을 사람이 또는 AI가 실행한다.
 이미 설치된 도구는 재설치하지 않으며, 기능을 꺼도 프로그램을 삭제하지 않는다.
 
@@ -169,7 +197,7 @@ python3 bin/dashboard.py plan  # 화면 없이 저장된 설정의 적용 안내
 | 서비스 도구 | AWS CLI, ngrok | CLI만 설치. 계정 인증·토큰 등록·터널 시작은 별도 |
 
 Oh My Zsh는 셸과 테마 화면에서 선택한다. 없으면 선택한 경로에 설치하는 안내가 나온다.
-GitHub·GitLab CLI는 연결과 서비스의 API 선택을 따른다. Git만 쓰면 설치할 필요가 없다.
+GitHub·GitLab CLI는 Git · SSH 연결의 API 선택을 따른다. Git만 쓰면 설치할 필요가 없다.
 외부 패키지 저장소가 필요한 CLI는 공식 설치 문서 링크를 제공한다.
 
 nvm을 선택하면 설치 안내가 nvm → 선택한 Node 버전 → Gemini 순서로 나온다.
@@ -271,3 +299,19 @@ Git의 [조건부 include](https://git-scm.com/docs/git-config#_conditional_incl
 [credential helper](https://git-scm.com/docs/gitcredentials),
 [gh 환경변수](https://cli.github.com/manual/gh_help_environment),
 [glab 환경변수](https://docs.gitlab.com/cli/configuration/#environment-variables)가 연동의 근거다.
+
+## 서비스 인증과 개발 환경 상태
+
+선택 설치한 environment-core와 연결하면 대시보드의 **서비스 인증**에서 Jira·Confluence·Google 계정의 설정·로그인·갱신을,
+**개발 환경 상태**에서 선택한 프로젝트의 Dev Container 구성·실행 상태를 확인한다.
+기존 Git·SSH·Bitwarden 설정은 유지한다. [연결·이전 안내](docs/environment-control.md)를 따른다.
+
+## UI 설계 미리보기
+
+카탈로그에서 사용한 패턴을 확인하고, 주 메뉴·연결 상세 위치·보조 설명 표시의 구현된
+대안을 비교할 수 있다. [UI 설계 살펴보기](docs/ui-design-inspector.md)의 미리보기 명령으로
+연다. 예시 설정을 사용하며 실제 설정 저장·인증 실행은 차단된다.
+
+Tailscale을 사용하는 원격 개발 PC는 **원격 접속 · Tailscale**의
+[새 클라이언트 설정](docs/tailscale-client-setup.md)을 따른다. 기존 SSH configure에도
+전용 별칭 Include가 연결되며 실제 계정 로그인과 원격 접속은 직접 확인한다.

@@ -27,7 +27,7 @@ def build(state,dependencies,repo,data):
         api='API: '+c['api']['tool'] if c['api']['enabled'] else 'API 도구 사용 안 함'
         checks.append(block('연결 · '+c['name'],c['id']+' · 프로필 '+c['profile']+' · '+c['host']+' · '+c['method'].upper()+' · '+api))
     tool_names=[f['name'] for f in features.DEFINITIONS if state['features'][f['id']]['enabled'] and f['id']!='ohmyzsh']
-    if tool_names:checks.append(block('선택 도구',', '.join(tool_names)))
+    if tool_names:checks.append(block('도구 선택',', '.join(tool_names)))
     stage('review','선택한 환경 확인','켜진 기능과 연결만 이 안내에 포함됩니다. 폴더별 신원, 서비스 접속, API 인증은 각각 확인합니다.',checks or [block('선택 기능 없음','필요한 기능을 고른 뒤 안내를 갱신하세요.')],'overview')
     materials=[]
     for c in active:
@@ -60,7 +60,7 @@ def build(state,dependencies,repo,data):
         installation.append(block('Git LFS · 저장소별 설정','설치 후 LFS를 사용할 저장소 안에서만 실행하세요. 전역 필터는 자동 설정하지 않습니다.',['git lfs install --local'],when='해당 저장소에서 Git LFS를 사용할 때만',optional=True))
     if any(state['features'][key]['enabled'] for key in ('aws','claude','gemini','ngrok')):
         installation.append(block('서비스 도구의 로그인은 별도','이 안내는 프로그램만 설치합니다. 각 서비스 로그인·토큰 등록·터널 시작은 자동 실행하지 않습니다.'))
-    stage('configure','설정 연결 · configure','홈의 관리 설정과 선택 도구를 연결합니다. 이미 설치된 도구는 재설치하지 않으며, 설정을 바꾼 뒤에도 같은 명령을 사용할 수 있습니다.',[block('WSL / macOS / Linux 터미널에서 실행',commands=[shlex.join(['python3',str(repo/'bin/dashboard.py'),'configure'])])])
+    stage('configure','설정 연결 · configure','홈의 관리 설정과 도구 선택를 연결합니다. 이미 설치된 도구는 재설치하지 않으며, 설정을 바꾼 뒤에도 같은 명령을 사용할 수 있습니다.',[block('WSL / macOS / Linux 터미널에서 실행',commands=[shlex.join(['python3',str(repo/'bin/dashboard.py'),'configure'])])])
     stage('shell','새 zsh에서 시작','현재 셸을 새 zsh로 바꿔 선택한 integration을 읽습니다. 기존 셸에서 bws로 키를 로드한 상태라면 먼저 작업을 마치고 세션을 정리하세요.',[block('다음 인증 명령은 새 셸에서 실행',commands=['exec zsh'])])
     if vault_refs:
         stage('vault','Bitwarden 로그인 · 잠금 해제','같은 터미널에서 상태를 확인한 뒤 해당하는 경우 하나만 진행하세요. 이메일·마스터 비밀번호·2FA는 사용자가 직접 입력합니다.',[

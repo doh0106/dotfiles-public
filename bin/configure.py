@@ -28,14 +28,14 @@ def link(source, target):
     target.symlink_to(source, target_is_directory=source.is_dir())
 
 
-def block(path, name, contents, prepend=False, preserve_link=False):
+def block(path, name, contents, prepend=False, preserve_link=False, preserve_legacy_contents=False):
     begin, end = f'# >>> dotfiles {name} >>>', f'# <<< dotfiles {name} <<<'
     old = path.read_text() if path.exists() else ''
     # Migrate the legacy whole-file symlink without editing its source repository.
     if path.is_symlink() and not preserve_link:
         legacy = str(path.resolve()).endswith(('/links/zsh/zshrc', '/links/ssh/config'))
         path.rename(path.with_name(path.name + '.bak.' + datetime.now().strftime('%Y%m%d%H%M%S%f')))
-        if legacy:
+        if legacy and not preserve_legacy_contents:
             old = ''
     if (begin in old) != (end in old):
         raise SystemExit(f'Incomplete managed block in {path}; repair it first.')

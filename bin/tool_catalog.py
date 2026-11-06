@@ -61,5 +61,5 @@ def plan(state,repo):
         if ident=='nvm':add('node','Node.js '+values['node'],node_ready(state),'nvm이 있어도 선택한 Node 버전이 없으면 설치합니다. 기존 버전을 자동 업그레이드하지 않습니다.')
         if ident=='zoxide':add('fzf','fzf · zi 의존성',shutil.which('fzf'),'z는 zoxide만으로, zi는 fzf와 함께 사용합니다.')
         if ident=='gemini' and not state['features']['nvm']['enabled'] and not system_node_ready():
-            rows.append(dict(id='node-system',name='Node.js 20+ · npm',installed=False,steps=['먼저 선택 도구에서 Node.js · nvm을 켜고 버전을 고르거나 시스템 Node.js 20 이상과 npm을 준비하세요. 이후 Gemini CLI 설치 명령을 실행하세요.'],commands=[]))
+            rows.append(dict(id='node-system',name='Node.js 20+ · npm',installed=False,steps=['먼저 도구 선택에서 Node.js · nvm을 켜고 버전을 고르거나 시스템 Node.js 20 이상과 npm을 준비하세요. 이후 Gemini CLI 설치 명령을 실행하세요.'],commands=[]))
     return rows
