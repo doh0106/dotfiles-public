@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='dotfiles-dashboard-') as temporary:
         data=request('api/state');state=data['state'];assert state['schema']==3
         assert state['connections']==[] and all(not v['enabled'] for v in state['features'].values())
         assert not (home/'.config/dotfiles').exists(),'GET must not install or persist settings'
-        for asset in ('','app.js','style.css'):
+        for asset in ('','app.js','style.css','navigation.js','onboarding.js','environment.js','tailscale.js'):
             with urllib.request.urlopen(url+asset) as response:assert response.status==200
         state['git']['enabled']=True;state['profiles'][0].update(path=str(home/'개인 space'),author='Example',email='example@example.org')
         state['features']['zellij']['enabled']=True;state['features']['zellij']['values']['session']='example'

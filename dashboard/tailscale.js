@@ -1,8 +1,5 @@
 'use strict';
-labels.tailscale='원격 접속 · Tailscale';
-const tailscaleNav=button(labels.tailscale,()=>navigate('tailscale'));tailscaleNav.dataset.view='tailscale';
-document.querySelector('.nav').insertBefore(tailscaleNav,document.querySelector('[data-view="runtime"]').nextElementSibling);
-const tailscaleOption=el('option',labels.tailscale);tailscaleOption.value='tailscale';$('mobile-nav').append(tailscaleOption);for(const nav of all('.nav [data-view]')){const option=$('mobile-nav').querySelector('option[value="'+nav.dataset.view+'"]');if(option)$('mobile-nav').append(option)}
+labels.tailscale='Tailscale·집 WSL';
 let tsData=null,tsDraft=null,tsSource=null,tsObservation=null,tsBusy=false;
 async function tsRequest(request){if(['acknowledge','observe'].includes(request.action)&&!tsSaved())throw Error('바꾼 접속 설정을 먼저 저장하세요.');const response=await fetch('/api/tailscale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});const result=await response.json();if(!response.ok)throw Error(result.error);return result;}
 function tsInitialize(){if(tsData)return;tsData=clone(snapshot.tailscale);tsSource=tsData.source;tsDraft=clone(tsData.target||{alias:'home-wsl',host:'',user:'',account:'',client:tsData.server_platform==='Darwin'?'macos':'linux',fingerprints:''});}
@@ -18,7 +15,7 @@ function tsDraftChanged(){
  }
  all('[data-ts-step="ssh"] .ts-code,[data-ts-step="connect"] .ts-code,[data-ts-step="connect"] pre').forEach(node=>node.hidden=!saved);
 }
-async function tsAction(action){if(tsBusy)return;tsBusy=true;try{await action();renderTailscale()}catch(error){toast(error.message)}finally{tsBusy=false}}
+async function tsAction(action){if(tsBusy)return;tsBusy=true;try{await action();snapshot.tailscale=clone(tsData);renderTailscale()}catch(error){toast(error.message)}finally{tsBusy=false}}
 function tsCode(parent,text){const box=el('div',undefined,'ts-code');box.append(el('pre',text,'long-pre'),button('명령·설정 복사',async()=>{try{await navigator.clipboard.writeText(text);toast('복사했습니다. 안내한 클라이언트의 터미널에서 실행하세요.')}catch{toast('텍스트를 선택해 직접 복사하세요.')}}));parent.append(box);}
 function tsLink(parent,text,url){const link=el('a',text+' ↗','instruction-link');link.href=url;link.target='_blank';link.rel='noopener noreferrer';parent.append(link);}
 function renderTailscale(){
@@ -73,6 +70,4 @@ function renderTailscale(){
  const finish=groupBox('접속이 되면 · 원격 작업 시작',root);finish.append(el('p','터미널 SSH 성공을 먼저 확인한 뒤 사용하는 원격 개발 앱에서 이 별칭과 프로젝트 폴더를 선택하세요. 앱별 접속 성공은 따로 확인합니다.','tool-state'));
  tsLink(finish,'기존 비공개 호스트·복구 안내','https://github.com/doh0106/dotfiles/tree/main/docs/wsl-remote-access');
 }
-const tailscaleNavigate=navigate;
-navigate=function(next){if(next!=='tailscale'){tailscaleNavigate(next);return}if(!draft)return;view=next;all('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));$('mobile-nav').value=view;$('breadcrumb').textContent=labels[view];$('page-title').textContent=labels[view];$('page-intro').textContent='새 컴퓨터의 설치·로그인·SSH 설정·접속 확인을 순서대로 진행합니다.';$('overline').textContent='REMOTE / TAILSCALE';$('heading-action').hidden=true;renderTailscale();mark()};
 window.addEventListener('beforeunload',event=>{if(tsDraft&&tsData&&JSON.stringify(tsDraft)!==JSON.stringify(tsData.target||{alias:'home-wsl',host:'',user:'',account:'',client:tsData.server_platform==='Darwin'?'macos':'linux',fingerprints:''})){event.preventDefault();event.returnValue=''}});

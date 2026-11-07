@@ -42,7 +42,9 @@ def build(state,dependencies,repo,data):
         location={'note':'Secure Note 본문','sshkey':'SSH Key의 private key','login':'Login의 password'}[reference['kind']]
         content='SSH 개인키 전체' if ssh else '토큰 한 줄'
         materials.append(block('Bitwarden · '+reference['id'],'항목 이름/ID: '+reference['item']+' · '+location+'에 '+content+'를 보관합니다. '+('추가 passphrase가 필요한 키는 기존 agent에서 먼저 준비하세요. ' if ssh else '')+'항목 형식이 다르면 연결의 인증 참조를 수정하세요. 비밀값은 대시보드에 입력하지 않습니다.'))
-    if materials:stage('materials','인증 재료 확인','공개키 파일, 비밀정보 항목의 이름·형식을 확인합니다. 실제 비밀값이나 vault 상태는 이 화면에서 조회하지 않습니다.',materials,'connections')
+    connection_kinds={c['kind'] for c in active}
+    connection_view='servers' if connection_kinds=={'server'} else 'connections' if connection_kinds=={'git'} else 'overview'
+    if materials:stage('materials','인증 재료 확인','공개키 파일, 비밀정보 항목의 이름·형식을 확인합니다. 실제 비밀값이나 vault 상태는 이 화면에서 조회하지 않습니다.',materials,connection_view)
     stage('save','검토 후 설정 파일 생성','대시보드의 「변경 검토 → 저장 · 설정 파일 생성」을 누르세요. 저장한 설정을 기준으로 다음 명령을 실행합니다.',[block('저장과 실행은 별개','초안 미리보기는 파일을 바꾸지 않습니다. 이미 같은 값을 저장했다면 그대로 다음 단계로 진행하세요.')])
     missing=[d for d in dependencies if not d['installed']]
     installed=[d for d in dependencies if d['installed']]

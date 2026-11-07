@@ -24,12 +24,12 @@ Node·Docker·Bitwarden·Agent Kit 없이도 대시보드부터 열 수 있다.
 
 ## 3. 대시보드의 기본 6단계 진행
 
-첫 화면의 **지금 할 일로 이동**부터 진행한다.
+**환경 개요 → 새 컴퓨터 설정 시작 / 이어서 설정**부터 진행한다.
 
 1. 셸과 테마 선택
 2. 필요한 도구 선택
-3. 작업 폴더와 Git 작성자 설정
-4. Git · SSH 접속과 인증 참조 설정
+3. Git 설정에서 폴더별 작성자 설정
+4. Git 설정에서 Git 호스트 접속과 인증 참조 설정
 5. 변경 검토·저장
 6. 적용 안내의 도구 설치·configure·새 셸·접속 확인 실행
 
@@ -48,7 +48,7 @@ git clone https://github.com/doh0106/environment-core.git "$HOME/personal/enviro
 python3 "$HOME/personal/environment-core/cli.py" register
 ```
 
-대시보드를 다시 열고 **서비스 인증**에서 Jira·Confluence·Google 설정 창을 연다.
+대시보드를 다시 열고 **외부 서비스**에서 Jira·Confluence·Google 설정 창을 연다.
 필요한 서비스만 직접 로그인·토큰 등록·접근 검증한다. 기존 인증을 가져올 경우 안전한
 이전 절차를 사용하며 채팅·공개 Git에 인증 값을 넣지 않는다.
 
@@ -65,7 +65,7 @@ python3 "$HOME/personal/environment-core/cli.py" \
 ```
 
 프로젝트의 `.devcontainer/`를 기준으로 `dev-up .`, `dev-shell .`, `dev-stop .`을 사용한다.
-대시보드의 **개발 환경 상태**는 관측만 하며 컨테이너를 생성하지 않는다.
+대시보드의 **프로젝트 실행 환경**는 관측만 하며 컨테이너를 생성하지 않는다.
 
 ## 6. 집 WSL에 원격 접속하려면
 
@@ -75,7 +75,7 @@ python3 "$HOME/personal/environment-core/cli.py" \
 git clone https://github.com/doh0106/dotfiles.git "$HOME/personal/dotfiles-private"
 ```
 
-**원격 접속 · Tailscale**에서 위 저장소의 `HEAD` 또는 마지막 fetch의 `origin/main`을 선택해
+**원격 접속 → Tailscale·집 WSL**에서 위 저장소의 `HEAD` 또는 마지막 fetch의 `origin/main`을 선택해
 접속 설정을 불러온다. 대상 저장 → Tailscale 설치 → 같은 신원 로그인 → SSH 별칭 적용 →
 집 WSL 접속 확인 순서로 따른다. [상세 절차](tailscale-client-setup.md)를 참고한다.
 이 용도로 private dotfiles의 옛 bootstrap 전체를 실행할 필요는 없다.

@@ -44,6 +44,14 @@ class RunbookTests(unittest.TestCase):
         self.state['connections']=[];self.state['credentials']=[]
         ids=[s['id'] for s in self.build()]
         self.assertFalse(set(ids)&{'vault','materials','credentials','verify','clone','cleanup'})
+    def test_auth_materials_link_uses_the_connection_domain(self):
+        c=self.state['connections'][0]
+        self.assertEqual(next(s for s in self.build() if s['id']=='materials')['view'],'connections')
+        c.update(kind='server',provider='generic',sshUser='dev',profile='')
+        self.assertEqual(next(s for s in self.build() if s['id']=='materials')['view'],'servers')
+        git=cfg.new_connection('personal','other-git');git.update(enabled=True,credential='ssh-ref')
+        self.state['connections'].append(git)
+        self.assertEqual(next(s for s in self.build() if s['id']=='materials')['view'],'overview')
     def test_https_does_not_load_or_test_ssh_keys(self):
         c=self.state['connections'][0];c.update(provider='gitlab',host='gitlab.example.org',method='https')
         self.state['credentials'][0]['username']='oauth2'

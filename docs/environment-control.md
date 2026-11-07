@@ -4,8 +4,8 @@
 공통 설정과 관측은 선택 설치한 environment-core에 위임한다.
 비밀값을 대시보드 settings.json에 추가하지 않으며 기존 schema 3을 유지한다.
 
-대시보드의 **서비스 인증**에서 Jira·Confluence·Google 설정과 인증 창을 열고,
-**개발 환경 상태**에서 선택한 프로젝트의 Dev Container 구성·컨테이너 상태를 확인한다.
+대시보드의 **외부 서비스**에서 Jira·Confluence·Google 설정과 인증 창을 열고,
+**프로젝트 실행 환경**에서 선택한 프로젝트의 Dev Container 구성·컨테이너 상태를 확인한다.
 설정 저장·설치·현재 인증·실행 상태는 별개다. core 미설치는 해당 기능의 미관측 상태이며
 기존 dotfiles의 Git·SSH·설정 적용을 막지 않는다.
 
