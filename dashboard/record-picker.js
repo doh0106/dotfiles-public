@@ -3,14 +3,14 @@
 const recordFields=new Set();
 function connectionLines(connection){
  const ref=credentialOf(connection.credential),profile=profileOf(connection);
- return [connection.host+' · '+connection.method.toUpperCase()+(connection.sshUser&&connection.method==='ssh'?' · 사용자 '+connection.sshUser:''),
-  '인증: '+(ref?sources[ref.source]+' · '+(ref.item||ref.variable||ref.helper||ref.id):'참조 지정 안 함'),
-  profile?'자동 적용: '+profile.path:'자동 적용할 폴더 없음',...(connection.method==='ssh'&&connection.publicKey?['공개키: '+connection.publicKey]:[])];
+ return [connection.host+' · '+connection.method.toUpperCase()+(connection.sshUser&&connection.method==='ssh'&&sshMode(connection)==='key'?' · 사용자 '+connection.sshUser:''),
+  '인증: '+(connection.method==='ssh'&&sshMode(connection)==='system'?'기존 SSH 설정 사용':ref?sources[ref.source]+' · '+(ref.item||ref.variable||ref.helper||ref.id):'참조 지정 안 함'),
+  profile?'자동 적용: '+profile.path:'자동 적용할 폴더 없음',...(connection.method==='ssh'&&sshMode(connection)==='key'&&connection.publicKey?['공개키: '+connection.publicKey]:[])];
 }
 function profileRecords(){return draft.profiles.filter(p=>p.enabled||p.id===current()?.profile).map(p=>({id:p.id,title:p.name,lines:[
  '폴더: '+p.path,'작성자: '+(p.author||'이름 미입력')+' · '+(p.email||'이메일 미입력')+(draft.git.enabled?'':' · 작성자 지정 꺼짐'),
  '연결: '+(draft.connections.filter(c=>c.kind==='git'&&c.profile===p.id).map(c=>c.name).join(', ')||'지정 안 함'),p.enabled?'규칙 사용 중':'규칙 사용 꺼짐']}));}
-function credentialRecords(connection,role){return draft.credentials.filter(ref=>compatible(ref.source,role,connection)||ref.id===(role==='api'?connection.api.credential:connection.credential)).map(ref=>({id:ref.id,title:ref.id,lines:[
+function credentialRecords(connection,role){return draft.credentials.filter(ref=>secretPurpose(ref)===(role==='git'&&connection.method==='ssh'?'ssh-key':'token')&&compatible(ref.source,role,connection)||ref.id===(role==='api'?connection.api.credential:connection.credential)).map(ref=>({id:ref.id,title:ref.id,lines:[
  '공급자: '+sources[ref.source],ref.source==='bitwarden'?'보관 항목: '+(ref.item||'미입력')+' · '+({note:'Secure Note',sshkey:'SSH Key',login:'Login'})[ref.kind]:ref.source==='agent'?'기존 SSH agent 사용':ref.source==='git-helper'?'도구: '+ref.helper:'환경변수 이름: '+(ref.variable||'미입력'),
  '사용 연결: '+(draft.connections.filter(c=>c.credential===ref.id||c.api.credential===ref.id).map(c=>c.name).join(', ')||'아직 없음')]}));}
 function recordChoiceField(parent,label,value,getRecords,onchange,id,noneTitle){

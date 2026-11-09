@@ -5,7 +5,7 @@ let progressBasis=null,progressSnapshot=null,recordingSetup=false;
 const setupSteps=[
  {id:'appearance',title:'셸과 테마 선택',view:'appearance',text:'Oh My Zsh와 테마를 쓸지 정하세요. 기본 셸을 그대로 사용해도 됩니다.'},
  {id:'tools',title:'필요한 도구 선택',view:'tools',text:'이동·검색·언어 도구 중 필요한 것만 켜세요. 설치 명령은 마지막 적용 단계에 나옵니다.'},
- {id:'connections',title:'원격 저장소 접근',view:'connections',text:'Git 호스트·접속 방식·인증 참조를 정하세요. 인증 참조와 키 수명은 연결 상세에서 설정하며, 접속이 필요 없으면 추가하지 않아도 됩니다.'},
+ {id:'connections',title:'원격 저장소 접근',view:'connections',text:'Git 서버와 접속 방식을 정하세요. SSH는 기존 설정에 맡기는 것이 기본입니다. 키·토큰 공급이 필요하면 비밀 관리에서 별도로 연동하세요.'},
  {id:'profiles',title:'커밋 작성자·적용 규칙 · 선택',view:'profiles',text:'필요한 경우 폴더 규칙을 만들고 앞에서 등록한 Git 연결을 지정하세요. 커밋 작성자 이름·이메일도 폴더별로 정할 수 있습니다. 자동 적용이 필요 없으면 이 단계는 설정 없이 확인하고 넘어가세요.'}
 ];
 function setupSection(state,id){

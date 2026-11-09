@@ -77,7 +77,10 @@ def safe_ssh_copy(source, target):
 
 def install(repo, mode):
     from host_inventory import references
-    preserve_existing=bool(references())
+    from configuration import read_settings,ssh_mode
+    active=[c for c in read_settings()[0]['connections'] if c['enabled'] and c['method']=='ssh']
+    delegates_ssh=any(ssh_mode(c)=='system' for c in active)
+    preserve_existing=bool(references()) or delegates_ssh
     config.mkdir(parents=True, exist_ok=True)
     shell=config/'shell.zsh'
     if preserve_existing and (home/'.zshrc').exists() and shell.resolve()!=(repo/'links/zsh/dotfiles.zsh').resolve():
@@ -89,12 +92,14 @@ def install(repo, mode):
         link(repo / 'links/zsh/dotfiles.zsh', shell)
         link(repo / 'links/zsh/zshrc', config / 'zshrc')
         block(home / '.zshrc', 'shell', 'source "$HOME/.config/dotfiles/zshrc"',preserve_legacy_contents=preserve_existing)
-    safe_ssh_copy(repo / 'links/ssh/config', home / '.ssh/config.d/dotfiles.conf')
-    for key in (repo / 'links/ssh/keys').glob('*.pub'):
-        link(key, home / '.ssh/keys' / key.name)
-    ssh_include=('Host *\n' if preserve_existing else '')+'Include ~/.ssh/config.d/dotfiles.conf\nHost *'
-    block(home / '.ssh/config', 'ssh', ssh_include, prepend=not preserve_existing,preserve_legacy_contents=preserve_existing)
-    (home / '.ssh/config').chmod(0o600)
+    # Delegation-only setups do not install any SSH includes or public-key links.
+    if not delegates_ssh or any(ssh_mode(c)=='key' for c in active):
+        safe_ssh_copy(repo / 'links/ssh/config', home / '.ssh/config.d/dotfiles.conf')
+        for key in (repo / 'links/ssh/keys').glob('*.pub'):
+            link(key, home / '.ssh/keys' / key.name)
+        ssh_include=('Host *\n' if preserve_existing else '')+'Include ~/.ssh/config.d/dotfiles.conf\nHost *'
+        block(home / '.ssh/config', 'ssh', ssh_include, prepend=not preserve_existing,preserve_legacy_contents=preserve_existing)
+        (home / '.ssh/config').chmod(0o600)
     import subprocess
     # A stable include path avoids accumulating paths when the checkout is moved.
     link(repo / 'links/git', config / 'git')

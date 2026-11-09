@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from configuration import endpoint,host_parts
+from configuration import endpoint,host_parts,ssh_mode
 
 DATA=Path.home()/'.config/dotfiles/dashboard'
 
@@ -43,16 +43,8 @@ def choose(config, explicit=None):
 
 
 def fetch(item, kind, private=False):
-    if not item:raise RuntimeError('Bitwarden 항목 이름이 설정되지 않았습니다.')
-    verb='item' if kind=='sshkey' else 'password' if kind=='login' else 'notes'
-    result=run(['bw','get',verb,item,'--nointeraction'])
-    if result.returncode:raise RuntimeError('Bitwarden 항목 조회 실패. 항목 이름·형식·잠금 상태를 확인하세요.')
-    value=result.stdout.rstrip('\n')
-    if kind=='sshkey':
-        try:value=json.loads(value)['sshKey']['privateKey']
-        except (ValueError,KeyError,TypeError):raise RuntimeError('SSH Key 항목 형식이 올바르지 않습니다.') from None
-    if not isinstance(value,str) or not value.strip():raise RuntimeError('Bitwarden 항목이 비어 있습니다.')
-    return value
+    from secret_store import read_bitwarden
+    return read_bitwarden(item,kind,run)
 
 
 def keys():
@@ -161,6 +153,7 @@ def remote_endpoint(url):
 
 
 def value(credential):
+    if credential.get('purpose') not in (None,'token'):raise RuntimeError('이 항목은 토큰 공급 용도가 아닙니다.')
     if credential['source']=='bitwarden':return fetch(credential['item'],credential['kind'])
     if credential['source']=='environment':
         token=os.environ.get(credential['variable'],'')
@@ -240,7 +233,7 @@ def main():
         try:name,profile,selected=selection(config,explicit,connection,https_host=request['host'])
         except (RuntimeError,ValueError):return
         credential=config['credentials'][selected['credential']]
-        if credential['source']!='bitwarden':return
+        if credential.get('purpose') not in (None,'token') or credential['source']!='bitwarden':return
         token=value(credential)
         try:
             if any(x in token for x in ('\n','\r','\0')):raise RuntimeError('토큰은 한 줄이어야 합니다.')
@@ -250,15 +243,19 @@ def main():
         return
     tool=(rest.pop(0) if rest else None) if args.action=='needs-vault' else args.action.removeprefix('needs-') if args.action in ('needs-gh','needs-glab') else args.action if args.action in ('gh','glab') else None
     name,profile,selected=selection(config,explicit,connection,tool=tool)
-    ref=selected['api']['credential'] if tool else selected['credential']
+    system=selected['method']=='ssh' and ssh_mode(selected)=='system' and not tool
+    ref=selected['api']['credential'] if tool else '' if system else selected['credential']
     credential=config['credentials'].get(ref)
+    if credential and selected['method']=='ssh' and not tool and credential.get('purpose') not in (None,'ssh-key'):raise RuntimeError('이 항목은 SSH 키 공급 용도가 아닙니다.')
     if args.action in ('needs-vault','needs-gh','needs-glab'):print('bitwarden' if credential and credential['source']=='bitwarden' else 'none');return
     if args.action=='prepare':
-        print(selected['method']+'-'+(credential['source'] if credential else 'anonymous'));return
+        print('ssh-system' if system else selected['method']+'-'+(credential['source'] if credential else 'agent' if selected['method']=='ssh' else 'existing'));return
     if args.action in ('load','check'):
+        if system:
+            print('기존 OpenSSH 설정에 맡깁니다. 키·vault를 조회하거나 변경하지 않았으며 실제 접속 성공은 별도 확인이 필요합니다.',file=sys.stderr);return
         if selected['method']=='https':
             print('HTTPS 인증은 Git credential helper가 요청 시 조회합니다. SSH 키를 로드하지 않습니다.',file=sys.stderr);return
-        if args.action=='check' or credential['source']=='agent':
+        if args.action=='check' or not credential or credential['source']=='agent':
             try:expected=' '.join(Path(selected['publicKey']).expanduser().read_text().split()[:2])
             except OSError:raise RuntimeError('연결의 공개키 파일을 찾을 수 없습니다.') from None
             if expected not in keys():raise RuntimeError('선택한 키가 agent에 없습니다. 공급자 agent에 키를 준비하거나 Bitwarden 로드를 선택하세요.')

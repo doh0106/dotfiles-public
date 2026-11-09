@@ -36,7 +36,7 @@ DOCS={'bw':'https://bitwarden.com/help/cli/','ohmyzsh':'https://github.com/ohmyz
 def plan(state):
     active=[c for c in state['connections'] if c['enabled']]
     creds={c['id']:c for c in state['credentials']}
-    references={ref for c in active for ref in ([c['credential']]+([c['api']['credential']] if c['api']['enabled'] else [])) if ref}
+    references={ref for c in active for ref in cfg.connection_refs(c) if ref}
     required={'git','bash','zsh'}
     if any(c['method']=='ssh' for c in active):required.update(('ssh','ssh-add','ssh-keygen'))
     if any(creds.get(ref,{}).get('source')=='bitwarden' for ref in references):required.add('bw')

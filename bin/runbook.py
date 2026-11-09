@@ -13,7 +13,7 @@ def build(state,dependencies,repo,data):
     active=[c for c in state['connections'] if c['enabled']]
     credentials={c['id']:c for c in state['credentials']}
     profiles={p['id']:p for p in state['profiles'] if p['enabled']}
-    refs={ref for c in active for ref in [c['credential'],c['api']['credential'] if c['api']['enabled'] else ''] if ref}
+    refs={ref for c in active for ref in cfg.connection_refs(c) if ref}
     vault_refs=[credentials[ref] for ref in sorted(refs) if credentials[ref]['source']=='bitwarden']
     stages=[]
     def stage(ident,title,description,blocks,view=None):
@@ -31,7 +31,7 @@ def build(state,dependencies,repo,data):
     stage('review','선택한 환경 확인','켜진 기능과 연결만 이 안내에 포함됩니다. 폴더별 신원, 서비스 접속, API 인증은 각각 확인합니다.',checks or [block('선택 기능 없음','필요한 기능을 고른 뒤 안내를 갱신하세요.')],'overview')
     materials=[]
     for c in active:
-        if c['method']!='ssh':continue
+        if c['method']!='ssh' or cfg.ssh_mode(c)=='system':continue
         path=str(Path(c['publicKey']).expanduser());exists=Path(path).is_file()
         links=[]
         if c['kind']=='git' and c['provider']=='github' and cfg.host_parts(c['host'])[0]=='github.com':links=[dict(label='개인 GitHub 계정의 SSH 키 관리',url='https://github.com/settings/keys')]
@@ -75,8 +75,10 @@ def build(state,dependencies,repo,data):
     preparation=[]
     for c in active:
         credential=credentials.get(c['credential'])
-        if c['method']=='ssh':
-            text=('Bitwarden에서 개인키를 읽어 agent에 로드합니다. 새 키 TTL: '+str(state['session']['keyLifetime'])+'초. 이미 있는 키의 TTL은 바꾸지 않습니다.' if credential['source']=='bitwarden' else '기존 SSH agent에 대응하는 키를 준비하세요. 이 공급자에서는 키를 가져오거나 TTL을 변경하지 않고 공개키 일치 여부를 확인합니다.')
+        if c['method']=='ssh' and cfg.ssh_mode(c)=='system':
+            preparation.append(block(c['name']+' · 기존 SSH 설정 사용','기존 ~/.ssh/config·agent·SSH 인증 절차에 맡깁니다. 키 로드·vault 로그인·공개키 파일 준비를 요구하지 않습니다. 실제 서버 인증은 별도 확인하세요.'))
+        elif c['method']=='ssh':
+            text=('Bitwarden에서 개인키를 읽어 agent에 로드합니다. 새 키 TTL: '+str(state['session']['keyLifetime'])+'초. 이미 있는 키의 TTL은 바꾸지 않습니다.' if credential and credential['source']=='bitwarden' else '기존 SSH agent에 대응하는 키를 준비하세요. 이 공급자에서는 키를 가져오거나 TTL을 변경하지 않고 공개키 일치 여부를 확인합니다.')
             preparation.append(block(c['name']+' · SSH 키 준비',text,[shlex.join(['ssh-keygen','-lf',str(Path(c['publicKey']).expanduser())]),shlex.join(['bws','--connection',c['id']]),'ssh-add -l']))
         elif credential and credential['source']=='bitwarden':
             preparation.append(block(c['name']+' · HTTPS 인증 준비','vault를 준비합니다. SSH agent는 시작하지 않으며, Git이 인증을 요청할 때 helper가 토큰을 읽습니다.',[shlex.join(['bws','--connection',c['id']])]))
@@ -88,15 +90,19 @@ def build(state,dependencies,repo,data):
     verification=[]
     for c in active:
         if c['method']=='ssh' and c['kind']=='git':
-            hostname,port=cfg.host_parts(c['host']);command=['ssh','-F',str(data/('ssh-'+c['profile']+'.config' if c['profile'] else 'ssh-connection-'+c['id']+'.config')),'-T']
+            hostname,port=cfg.host_parts(c['host']);command=['ssh','-T'] if cfg.ssh_mode(c)=='system' else ['ssh','-F',str(data/('ssh-'+c['profile']+'.config' if c['profile'] else 'ssh-connection-'+c['id']+'.config')),'-T']
             if port:command+=['-p',str(port)]
-            command+=[c['sshUser']+'@'+hostname];links=[]
+            command+=[hostname if cfg.ssh_mode(c)=='system' else c['sshUser']+'@'+hostname];links=[]
             text='처음 연결할 때 서버 host key의 fingerprint를 확인하세요. 서비스가 반환한 인증 계정이 본인 계정인지 확인합니다.'
             if c['provider']=='github' and hostname=='github.com':
                 text+=' GitHub의 “Hi USERNAME! … successfully authenticated”는 성공 응답이며 종료 코드 1도 정상입니다.'
                 links=[dict(label='GitHub 공식 서버 fingerprint',url='https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints'),dict(label='GitHub SSH 연결 확인 안내',url='https://docs.github.com/en/authentication/connecting-to-github-with-ssh/testing-your-ssh-connection')]
             verification.append(block(c['name']+' · SSH 접속 확인',text,[shlex.join(command)],links=links))
-        elif c['kind']=='server':verification.append(block(c['name']+' · SSH 설정 확인','설정만 출력하며 서버에 접속하지 않습니다. 실제 접속 시 서버 신원을 확인하세요.',[shlex.join(['ssh','-G',c.get('sshAlias') or c['id']])]))
+        elif c['kind']=='server':
+            hostname,port=cfg.host_parts(c['host'])
+            target=hostname if cfg.ssh_mode(c)=='system' else c.get('sshAlias') or c['id']
+            command=['ssh','-G']+(['-p',str(port)] if port and cfg.ssh_mode(c)=='system' else [])+[target]
+            verification.append(block(c['name']+' · SSH 설정 확인','OpenSSH가 적용할 설정을 확인합니다. 원본에 Match exec 등이 있으면 OpenSSH가 실행할 수 있으므로 내용을 먼저 확인하세요. 서버에 접속하는 명령은 아닙니다.',[shlex.join(command)]))
         if c['api']['enabled']:verification.append(block(c['name']+' · '+c['api']['tool']+' API 인증 확인','선택한 API 서비스 호스트의 토큰을 해당 CLI 자식 프로세스에만 전달합니다.',[shlex.join(['bw'+c['api']['tool'],'--connection',c['id'],'auth','status'])]))
         if c['kind']=='git' and c['profile']:verification.append(block(c['name']+' · 저장소 설정과 읽기 권한 확인',(('프로필 폴더 '+profiles[c['profile']]['path']+' 아래의 ' ) if c['profile'] else '연결별 설정을 적용한 ' )+'실제 프로젝트 저장소로 이동한 뒤 실행하세요. origin의 호스트와 '+c['method'].upper()+' 방식이 이 연결과 맞아야 합니다. Git identity 관리를 켰다면 작성자 이메일도 확인하세요.',['git config --get dotfiles.profile','git config --show-origin --get user.email','git remote -v','git ls-remote origin'],when='해당 서비스의 기존 저장소에서 작업할 때만',optional=True))
     for c in active:
@@ -108,7 +114,8 @@ def build(state,dependencies,repo,data):
     for c in active:
         if c['kind']!='git':continue
         hostname,port=cfg.host_parts(c['host'])
-        url=('ssh://'+c['sshUser']+'@'+c['host']+'/OWNER/REPO.git' if port else c['sshUser']+'@'+hostname+':OWNER/REPO.git') if c['method']=='ssh' else 'https://'+c['host']+'/OWNER/REPO.git'
+        user='' if cfg.ssh_mode(c)=='system' else c['sshUser']+'@'
+        url=('ssh://'+user+c['host']+'/OWNER/REPO.git' if port else user+hostname+':OWNER/REPO.git') if c['method']=='ssh' else 'https://'+c['host']+'/OWNER/REPO.git'
         command=shlex.join(['git','-c','include.path='+str(data/('profile-'+c['profile']+'.gitconfig' if c['profile'] else 'connection-'+c['id']+'.gitconfig')),'clone',url,str(Path(profiles[c['profile']]['path']).expanduser()/'REPO') if c['profile'] else '/PATH/TO/REPO'])
         clone.append(block(c['name']+' · 최초 clone 예시','선택한 연결의 설정 파일을 명시합니다. 프로필이 없으면 폴더 자동 적용이 없으므로 기존 저장소에서도 git -c include.path=… 명령을 사용하거나 해당 저장소의 로컬 include로 연결하세요. OWNER/REPO와 대상 폴더는 실제 값으로 바꾸세요.',[command],when='새 저장소가 필요할 때만',optional=True,example=True))
     if clone:stage('clone','필요할 때만 새 저장소 가져오기','현재 환경 설정만 확인한다면 이 단계는 건너뛰세요.',clone)
