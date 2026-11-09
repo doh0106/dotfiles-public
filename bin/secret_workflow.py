@@ -20,11 +20,12 @@ import configuration as cfg
 import auth
 import terminal_handoff
 import legacy_secrets
+from ssh_domain import SSHDomain
 from secret_store import read_bitwarden
 
 class Workflow:
     def __init__(self,origin):
-        self.origin=origin;self.lock=threading.RLock();self.session=None;self.expires=0
+        self.ssh=SSHDomain(lambda args,**kw:self.run(args,**kw));self.origin=origin;self.lock=threading.RLock();self.session=None;self.expires=0
         self.generation=None;self.ticket=None;self.ticket_until=0;self.launch_dir=None
         self.items={};self.prepared={};self.agent_env=None;self.dedicated_socket=False;self.owned_pid=None;self.agent_dir=None;self.added={};self.last_supply=None;self.closed=False;self.session_timer=None
     def run(self,args,**kw):
@@ -59,13 +60,14 @@ class Workflow:
                 if not stat.S_ISREG(info.st_mode) or not resolved.is_relative_to(Path.home().resolve()) or info.st_uid!=os.getuid() or info.st_size>16384 or not row['path'].endswith('.pub'):continue
                 parts=resolved.read_text().split();public=' '.join(parts[:2])
                 if len(parts)<2 or not parts[0].startswith(('ssh-','ecdsa-','sk-')):continue
-                socket=row['socket'] or os.environ.get('SSH_AUTH_SOCK','')
+                shared=self.ssh.read();socket=row['socket'] or shared.get('socket') or os.environ.get('SSH_AUTH_SOCK','')
                 if socket not in cache:
                     env=dict(os.environ)
                     if socket:env['SSH_AUTH_SOCK']=socket
                     result=self.run(['ssh-add','-L'],env=env);cache[socket]=None if result.returncode not in (0,1) else {' '.join(line.split()[:2]) for line in result.stdout.splitlines() if len(line.split())>=2}
                 row['state']='agent_unavailable' if cache[socket] is None else 'ready' if public in cache[socket] else 'not_loaded'
-                if public in self.added:row['expires_in']=max(0,int(self.added[public]-time.time()))
+                deadline=shared.get('added',{}).get(socket,{}).get(public)
+                if deadline is not None:row['expires_in']=max(0,int(deadline-time.time()))
             except (OSError,ValueError,UnicodeError):pass
         return rows
     def prepare_saved(self,connection):
@@ -82,7 +84,7 @@ class Workflow:
         return dict(stored)
     def prepare_registered(self,ident):
         registration=next((row for row in legacy_secrets.registrations()['items'] if row['id']==ident),None)
-        if not registration:raise ValueError('기존 bws 등록 목록을 새로 확인하세요.')
+        if not registration:raise ValueError('기존 SSH 등록 목록을 새로 확인하세요.')
         self.items[registration['item']]=dict(id=registration['item'],name=registration['name'],kind=registration['kind'])
         record=self.prepare(registration['item']);stored=self.prepared[record['id']]
         # Reuse a path only after the actual derived public key matches, never by alias/name.
@@ -96,33 +98,18 @@ class Workflow:
         if matches:stored.update(path=matches[0]['path'],saved=True)
         stored['existing_connections']=[row['name'] for row in matches]
         return dict(stored)
-    def registered_keys(self):
-        rows={}
-        for row in legacy_secrets.registrations()['items']:
-            rows[(row['item'],row['kind'])]=dict(row)
-        state=cfg.read_settings()[0]
-        for ref in state['credentials']:
-            used=any(c['method']=='ssh' and c['credential']==ref['id'] for c in state['connections'])
-            if ref['source']!='bitwarden' or ref['kind'] not in ('note','sshkey') or not ref['item'] or not (ref.get('purpose')=='ssh-key' or not ref.get('purpose') and used):continue
-            key=(ref['item'],ref['kind'])
-            if key not in rows:rows[key]=dict(id=ref['id'],item=ref['item'],name=ref['item'],kind=ref['kind'],purpose='ssh-key',sources=[])
-            rows[key]['sources']=list(dict.fromkeys(rows[key]['sources']+[str(cfg.SETTINGS)]))
-        return list(rows.values())
-    def supply_all(self,lifetime):
+    def registered_keys(self):return self.ssh.registrations()
+    def supply_all(self,lifetime,ids=None):
         if type(lifetime) is not int or not 60<=lifetime<=86400:raise ValueError('키 유지 시간은 60~86400초입니다.')
         if not self.session or time.monotonic()>=self.expires:raise ValueError('Bitwarden 연결 설정에서 먼저 연결하세요.')
         rows=self.registered_keys()
-        if not rows:raise ValueError('공급할 등록 키가 없습니다.')
-        env=self.agent();runner=lambda args,**kw:self.run(args,env=env,**kw);results=[]
-        for row in rows:
-            try:
-                added=auth.add(row['item'],row['kind'],lifetime,runner=runner,fetcher=lambda item,kind,private=False:read_bitwarden(item,kind,self.vault_run))
-                for key in added:self.added[key]=time.time()+lifetime
-                results.append(dict(item=row['item'],kind=row['kind'],state='added' if added else 'reused'))
-            except (ValueError,RuntimeError,OSError):
-                results.append(dict(item=row['item'],kind=row['kind'],state='failed',message='공급하지 못했습니다. 항목 형식·저장소 연결을 확인하세요.'))
-        self.last_supply=dict(results=results,agent_socket=env.get('SSH_AUTH_SOCK'),dedicated_agent=self.dedicated_socket)
-        return self.last_supply
+        if ids is not None:
+            if not isinstance(ids,list) or not ids or any(not isinstance(value,str) for value in ids) or set(ids)-{row['id'] for row in rows}:raise ValueError('등록된 SSH 키를 선택하세요.')
+            rows=[row for row in rows if row['id'] in ids]
+        result=self.ssh.supply(rows,lifetime,lambda item,kind,private=False:read_bitwarden(item,kind,self.vault_run),syncer=lambda:self.vault_run(['bw','sync','--nointeraction']))
+        self.agent_env=self.ssh.environment(result['agent_socket']);self.dedicated_socket=result['dedicated_agent'];self.owned_pid=self.ssh.owned_pid
+        for public in result.pop('added_keys'):self.added[public]=time.time()+lifetime
+        self.last_supply=result;return result
     def connection_lifetime(self):
         try:
             path=cfg.DATA/'vault-preferences.json';info=path.lstat()
@@ -149,9 +136,10 @@ class Workflow:
             try:unlocked=not probe.returncode and json.loads(probe.stdout).get('status')=='unlocked'
             except (ValueError,TypeError):unlocked=False
             if not unlocked:self.forget()
-        return dict(registered_keys=self.registered_keys(),last_supply=self.last_supply,connection_minutes=self.connection_lifetime(),legacy=legacy_secrets.registrations(),keys=self.key_status(),terminals=terminal_handoff.available(),default_terminal=terminal_handoff.settings(),generation=self.generation,connected=bool(self.session),expires_in=max(0,int(self.expires-time.monotonic())) if self.session else 0,
+        shared=self.ssh.status();self.last_supply=shared['last_supply']
+        return dict(shared_agent=shared,registered_keys=self.registered_keys(),last_supply=self.last_supply,connection_minutes=self.connection_lifetime(),legacy=legacy_secrets.registrations(),keys=self.key_status(),terminals=terminal_handoff.available(),default_terminal=terminal_handoff.settings(),generation=self.generation,connected=bool(self.session),expires_in=max(0,int(self.expires-time.monotonic())) if self.session else 0,
             pending=bool(self.ticket and time.monotonic()<self.ticket_until),installed={x:bool(shutil.which(x)) for x in ('bw','ssh-add','ssh-keygen','ssh-agent')},
-            agent_socket=(self.agent_env or {}).get('SSH_AUTH_SOCK'),managed_keys=len(self.added),prepared=[dict(record) for record in self.prepared.values()])
+            agent_socket=shared['agent_socket'],managed_keys=shared['managed_keys'],prepared=[dict(record) for record in self.prepared.values()])
     def connect(self,launch=False):
         if not shutil.which('bw'):raise ValueError('Bitwarden CLI를 먼저 설치하세요.')
         # This one-time capability is not a vault session. It expires and is single-use.
@@ -262,36 +250,17 @@ class Workflow:
             with os.fdopen(descriptor,'w') as output:output.write(record['public']+'\n')
         record.update(path=str(target),saved=True);return dict(record)
     def agent(self):
-        if self.agent_env:return self.agent_env
-        env={k:v for k,v in os.environ.items() if not (k in ('BW_SESSION','BW_CLIENTSECRET','GH_TOKEN','GITHUB_TOKEN','GITLAB_TOKEN','GLAB_TOKEN') or k.endswith('_TOKEN'))}
-        probe=self.run(['ssh-add','-l'],env=env)
-        if probe.returncode in (0,1):self.agent_env=env;return env
-        self.agent_dir=cfg.DATA/'agent'
-        if not self.agent_dir.resolve().is_relative_to(Path.home().resolve()) or self.agent_dir.is_symlink():raise ValueError('안전한 전용 agent 경로가 아닙니다.')
-        self.agent_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
-        info=self.agent_dir.stat()
-        if info.st_uid!=os.getuid() or info.st_mode&0o077:raise ValueError('전용 agent 폴더는 본인만 접근할 수 있어야 합니다.')
-        socket=str(self.agent_dir/'agent.sock');self.dedicated_socket=True
-        if len(os.fsencode(socket))>100:raise ValueError('전용 agent 경로가 너무 깁니다. 기존 SSH agent를 먼저 준비하세요.')
-        candidate=dict(env,SSH_AUTH_SOCK=socket)
-        if os.path.lexists(socket):
-            info=Path(socket).lstat()
-            if not stat.S_ISSOCK(info.st_mode) or info.st_uid!=os.getuid():raise ValueError('기존 파일을 agent 소켓으로 덮어쓰지 않습니다.')
-            if self.run(['ssh-add','-l'],env=candidate).returncode in (0,1):self.agent_env=candidate;return candidate
-            Path(socket).unlink()  # Stale socket in this private, application-owned directory only.
-        result=self.run(['ssh-agent','-a',socket,'-s'],env=env)
-        pid=re.search(r'SSH_AGENT_PID=(\d+)',result.stdout)
-        if result.returncode or not pid:raise ValueError('SSH agent를 시작하지 못했습니다.')
-        self.owned_pid=int(pid.group(1));env.update(SSH_AUTH_SOCK=socket,SSH_AGENT_PID=str(self.owned_pid));self.agent_env=env;return env
+        self.agent_env=self.ssh.agent();self.owned_pid=self.ssh.owned_pid;self.dedicated_socket=self.agent_env['SSH_AUTH_SOCK']==str(cfg.DATA/'agent/agent.sock');return self.agent_env
     def supply(self,ident,lifetime):
         if type(lifetime) is not int or not 60<=lifetime<=86400:raise ValueError('키 유지 시간은 60~86400초입니다.')
         record=self.public_record(ident)
         if not record['saved']:raise ValueError('공개키 파일을 먼저 저장하세요.')
-        env=self.agent();runner=lambda args,**kw:self.run(args,env=env,**kw)
-        added=auth.add(record['item'],record['kind'],lifetime,record['path'],runner=runner,fetcher=lambda item,kind,private=False:read_bitwarden(item,kind,self.vault_run))
-        for key in added:self.added[key]=time.time()+lifetime
-        record.update(loaded=True,agent_socket=env.get('SSH_AUTH_SOCK'),dedicated_agent=self.dedicated_socket)
-        return dict(record,added=bool(added),lifetime=lifetime if added else None)
+        result=self.ssh.supply([dict(item=record['item'],kind=record['kind'],publicKey=record['path'])],lifetime,lambda item,kind,private=False:read_bitwarden(item,kind,self.vault_run),syncer=lambda:self.vault_run(['bw','sync','--nointeraction']))
+        if result['results'][0]['state']=='failed':raise ValueError('선택한 키를 공급하지 못했습니다.')
+        self.agent_env=self.ssh.environment(result['agent_socket']);self.dedicated_socket=result['dedicated_agent'];self.owned_pid=self.ssh.owned_pid
+        for key in result['added_keys']:self.added[key]=time.time()+lifetime
+        record.update(loaded=True,agent_socket=result['agent_socket'],dedicated_agent=result['dedicated_agent'])
+        return dict(record,added=bool(result['added_keys']),lifetime=lifetime if result['added_keys'] else None)
     def check_token(self,ident):
         entry=self.entry(ident,'token');value=read_bitwarden(ident,entry['kind'],self.vault_run)
         try:
@@ -299,24 +268,19 @@ class Workflow:
         finally:del value
         return dict(ready=True,item=entry['id'],name=entry['name'],kind=entry['kind'])
     def cleanup(self):
-        errors=0
-        if self.agent_env:
-            for key in list(self.added):
-                result=self.run(['ssh-add','-d','-'],input=key+'\n',env=self.agent_env)
-                # Expired keys may already be absent; check identity before retaining failure.
-                if result.returncode:
-                    probe=self.run(['ssh-add','-L'],env=self.agent_env)
-                    if key in probe.stdout:errors+=1;continue
-                self.added.pop(key,None)
-        if errors:raise ValueError('일부 agent 키를 정리하지 못했습니다. 다시 시도하세요.')
+        result=self.ssh.cleanup();self.added.clear()
         for record in self.prepared.values():record['loaded']=False
-        return dict(removed=True)
+        return result
     def dispatch(self,request):
         with self.lock:
             if self.closed:raise ValueError('대시보드가 종료 중입니다.')
             action=request.get('action')
-            allowed={'unlock_ui':{'password','client_id','client_secret'},'supply_all':{'lifetime'},'set_connection_lifetime':{'minutes'},'status':set(),'set_terminal':{'terminal'},'connect':{'launch'},'search':{'query','purpose'},'prepare_registered':{'registration'},'prepare_saved':{'connection'},'prepare_public':{'item'},'save_public':{'id','path'},'supply_key':{'id','lifetime'},'check_token':{'item'},'cleanup':set(),'disconnect':set()}
+            allowed={'supply_selected':{'ids','lifetime'},'set_agent':{'socket'},'set_sync':{'enabled'},'set_manifest':{'path'},'unlock_ui':{'password','client_id','client_secret'},'supply_all':{'lifetime'},'set_connection_lifetime':{'minutes'},'status':set(),'set_terminal':{'terminal'},'connect':{'launch'},'search':{'query','purpose'},'prepare_registered':{'registration'},'prepare_saved':{'connection'},'prepare_public':{'item'},'save_public':{'id','path'},'supply_key':{'id','lifetime'},'check_token':{'item'},'cleanup':set(),'disconnect':set()}
             if action not in allowed or set(request)-{'action'}!=allowed[action]:raise ValueError('지원하지 않는 비밀 관리 요청입니다.')
+            if action=='supply_selected':return self.supply_all(request['lifetime'],request['ids'])
+            if action=='set_manifest':return self.ssh.set_manifest(request['path'])
+            if action=='set_sync':return self.ssh.set_sync(request['enabled'])
+            if action=='set_agent':return self.ssh.set_agent(request['socket'])
             if action=='unlock_ui':return self.unlock_ui(request['password'],request['client_id'],request['client_secret'])
             if action=='supply_all':return self.supply_all(request['lifetime'])
             if action=='set_connection_lifetime':return self.set_connection_lifetime(request['minutes'])
@@ -335,13 +299,6 @@ class Workflow:
     def close(self):
         with self.lock:
             self.closed=True
-            try:self.cleanup()
-            except (ValueError,OSError):pass
-            self.forget();self.ticket=None
-            if self.owned_pid and self.agent_env:
-                # Never terminate an agent with unrelated identities.
-                probe=self.run(['ssh-add','-l'],env=self.agent_env)
-                if probe.returncode==1:
-                    self.run(['ssh-agent','-k'],env=self.agent_env)
-                    if self.agent_dir:shutil.rmtree(self.agent_dir,ignore_errors=True)
+            # Keys belong to the UI-owned supply domain, not the lifetime of this window.
+            self.forget();self.ticket=None;self.ssh.close_empty_owned()
             if self.launch_dir:self.launch_dir.cleanup()

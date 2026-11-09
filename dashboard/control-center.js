@@ -48,7 +48,7 @@ function renderControlCenter(){
  function task(title,text,action){const row=el('div',undefined,'control-task');const content=el('div');content.append(el('h3',title),el('p',text,'hint'));row.append(content,action);tasks.append(row)}
  task('Bitwarden 연결','키·값을 새로 가져올 때 연결합니다. 이미 agent에 공급한 키는 별도로 유지됩니다.',button(secretFlow.status?.connected?'연결 설정':'연결하기',()=>navigate('providers'),'btn'));
  const keyButton=button('등록된 SSH 키 모두 공급',supplyFromHome,'btn');keyButton.disabled=!secretFlow.status?.connected||controlState.busy||snapshot.design_preview;
- task('SSH 키 공급',(secretFlow.status?.registered_keys?.length||0)+'개 등록 · bws처럼 agent에 공급합니다. agent 설정은 원격 접속에서 관리합니다.',keyButton);
+ task('SSH 키 공급',(secretFlow.status?.registered_keys?.length||0)+'개 등록 · 버튼으로 agent에 공급합니다. agent 설정은 원격 접속에서 관리합니다.',keyButton);
  if(secretFlow.status?.last_supply){const report=el('ul');for(const row of secretFlow.status.last_supply.results)report.append(el('li',row.item+' · '+({added:'공급 완료',reused:'기존 키 재사용',failed:'공급 실패'})[row.state]));tasks.append(report);if(secretFlow.status.last_supply.dedicated_agent)tasks.append(el('p','별도 agent가 준비됐습니다. 원격 접속 → SSH agent에서 터미널 연결 방법을 확인하세요.','hint'))}
  const optional=el('details',undefined,'control-more control-optional');optional.append(el('summary','필요할 때 추가 · 서비스·프로젝트·원격 접속'));root.append(optional);const optionalTasks=el('section',undefined,'control-tasks');optional.append(optionalTasks);
  function extra(title,text,action){const row=el('div',undefined,'control-task'),content=el('div');content.append(el('h3',title),el('p',text,'hint'));row.append(content,action);optionalTasks.append(row)}

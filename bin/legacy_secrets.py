@@ -7,8 +7,8 @@ import stat
 import configuration as cfg
 
 
-def registrations():
-    explicit=os.environ.get('DOTFILES_SECRETS_MANIFEST')
+def registrations(manifest=None):
+    explicit=manifest or os.environ.get('DOTFILES_SECRETS_MANIFEST')
     roots=[Path(os.environ['DOTFILES_DIR']).expanduser()] if os.environ.get('DOTFILES_DIR') else []
     roots += [cfg.REPO,Path.home()/'dotfiles',Path.home()/'.dotfiles']
     paths=[Path(explicit).expanduser()] if explicit else [root/'secrets.json' for root in roots]

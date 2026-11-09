@@ -23,6 +23,7 @@ import json,os,sys
 from pathlib import Path
 v=json.loads((Path.home()/'fixture-vault.json').read_text());a=sys.argv[1:]
 if a[0]=='status': print(json.dumps({'status':'unlocked' if os.environ.get('BW_SESSION')=='synthetic-session-123456' else 'locked'}))
+elif a[:1]==['sync']:pass
 elif a[:2]==['list','items']:
  print(json.dumps([{'id':'key-1234','name':'Personal SSH key','type':5,'sshKey':{'privateKey':v['private'],'publicKey':v['public']}},{'id':'note-1234','name':'Legacy SSH note','type':2,'notes':v['private']},{'id':'token-1234','name':'API token','type':2,'notes':v['token']},{'id':'login-1234','name':'Service login','type':1,'login':{'password':v['token']}},{'id':'deleted-1234','name':'Deleted','type':5,'deletedDate':'yesterday'}]))
 elif a[:2]==['get','item']:print(json.dumps({'sshKey':{'privateKey':v['private'],'publicKey':v['public']}}))
@@ -33,7 +34,7 @@ else:sys.exit(9)
   bw=self.mocks/'bw';bw.write_text(script);bw.chmod(0o755)
   self.workflow=flow.Workflow('http://127.0.0.1:12345')
  def tearDown(self):
-  self.workflow.close();self.paths.stop();self.env.stop();self.temp.cleanup()
+  self.workflow.cleanup();self.workflow.close();self.paths.stop();self.env.stop();self.temp.cleanup()
  def connect(self):
   handoff=self.workflow.connect();ticket=self.workflow.ticket
   self.assertNotIn('BW_SESSION',handoff['command']);self.workflow.attach(ticket,'synthetic-session-123456')
@@ -204,6 +205,25 @@ else:sys.exit(9)
   with patch.object(self.workflow,'run',side_effect=run):
    with self.assertRaises(ValueError) as error:self.workflow.unlock_ui('synthetic-master')
   self.assertNotIn('SENSITIVE',str(error.exception));self.assertIsNone(self.workflow.session)
+ def test_ui_backend_survives_reopening_without_cli_or_reentering_registry(self):
+  manifest=self.home/'secrets.json';manifest.write_text(json.dumps(dict(secrets=[dict(bw_name='key-1234',bw_type='sshkey',action='ssh-add')])))
+  self.connect();self.workflow.ssh.set_manifest(str(manifest));first=self.workflow.supply_all(60);before=json.loads((cfg.DATA/'ssh-supply.json').read_text())['added'];self.workflow.close()
+  replacement=flow.Workflow('http://127.0.0.1:12345')
+  try:
+   self.assertEqual(replacement.status()['shared_agent']['agent_socket'],first['agent_socket']);self.assertEqual(len(replacement.registered_keys()),1)
+   self.assertEqual(replacement.status()['shared_agent']['managed_keys'],1)
+   replacement.connect();replacement.attach(replacement.ticket,'synthetic-session-123456');again=replacement.supply_all(120);self.assertEqual(again['results'][0]['state'],'reused');self.assertEqual(before,json.loads((cfg.DATA/'ssh-supply.json').read_text())['added']);replacement.cleanup()
+  finally:replacement.close()
+ def test_shared_domain_keeps_per_socket_ownership_when_switching_agents(self):
+  from ssh_domain import SSHDomain
+  first=self.prepared();supplied=self.workflow.supply(first['id'],60)
+  agent=subprocess.run(['ssh-agent','-a',str(self.home/'other.sock'),'-s'],capture_output=True,text=True,check=True);pid=re.search(r'SSH_AGENT_PID=(\d+)',agent.stdout).group(1);env=dict(os.environ,SSH_AUTH_SOCK=str(self.home/'other.sock'),SSH_AGENT_PID=pid)
+  try:
+   subprocess.run(['ssh-add',str(self.home/'fixture')],env=env,capture_output=True,check=True)
+   self.workflow.ssh.set_agent(str(self.home/'other.sock'));self.workflow.supply(first['id'],120);self.workflow.cleanup()
+   self.assertEqual(subprocess.run(['ssh-add','-l'],env=env,capture_output=True).returncode,0,'pre-existing key on the other socket must remain')
+   self.assertEqual(subprocess.run(['ssh-add','-l'],env=dict(env,SSH_AUTH_SOCK=supplied['agent_socket']),capture_output=True).returncode,1)
+  finally:subprocess.run(['ssh-agent','-k'],env=env,capture_output=True)
  def test_terminal_handoff_keeps_passwords_and_session_out_of_output(self):
   import secret_session,io,contextlib
   handoff=self.workflow.connect();request=Path(self.workflow.launch_dir.name)/'request.json'
