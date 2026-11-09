@@ -37,6 +37,48 @@ class Workflow:
     def forget(self):
         if self.session_timer:self.session_timer.cancel();self.session_timer=None
         self.session=None;self.expires=0;self.generation=None;self.items.clear();self.prepared.clear()
+    def key_status(self):
+        import host_inventory
+        try:state=cfg.read_settings()[0]
+        except (ValueError,OSError,TypeError):return []
+        rows=[]
+        for c in state['connections']:
+            if c['method']=='ssh' and cfg.ssh_mode(c)=='key':rows.append(dict(id=c['id'],name=c['name'],path=c['publicKey'],socket=c.get('agentSocket'),source='saved'))
+        for c in host_inventory.observe().get('candidates',[]):
+            path=c.get('details',{}).get('identityfile','')
+            if c['category'] in ('ssh','git-ssh') and path.endswith('.pub') and not any(row['name']==c['label'] for row in rows):rows.append(dict(id='existing:'+c['id'],name=c['label'],path=path,socket=None,source='existing'))
+        for record in self.prepared.values():
+            if record['saved'] and not any(row['path']==record['path'] for row in rows):rows.append(dict(id='prepared:'+record['id'],name=record['name'],path=record['path'],socket=record.get('agent_socket'),source='prepared'))
+        cache={}
+        for row in rows:
+            row['state']='public_missing';row['expires_in']=None
+            path=Path(row['path']).expanduser()
+            try:
+                resolved=path.resolve();info=resolved.stat()
+                if not resolved.is_relative_to(Path.home().resolve()) or info.st_uid!=os.getuid() or info.st_size>16384 or not row['path'].endswith('.pub'):continue
+                parts=resolved.read_text().split();public=' '.join(parts[:2])
+                if len(parts)<2 or not parts[0].startswith(('ssh-','ecdsa-','sk-')):continue
+                socket=row['socket'] or os.environ.get('SSH_AUTH_SOCK','')
+                if socket not in cache:
+                    env=dict(os.environ)
+                    if socket:env['SSH_AUTH_SOCK']=socket
+                    result=self.run(['ssh-add','-L'],env=env);cache[socket]=None if result.returncode not in (0,1) else {' '.join(line.split()[:2]) for line in result.stdout.splitlines() if len(line.split())>=2}
+                row['state']='agent_unavailable' if cache[socket] is None else 'ready' if public in cache[socket] else 'not_loaded'
+                if public in self.added:row['expires_in']=max(0,int(self.added[public]-time.time()))
+            except (OSError,ValueError,UnicodeError):pass
+        return rows
+    def prepare_saved(self,connection):
+        state=cfg.validate(cfg.read_settings()[0]);c=next((c for c in state['connections'] if c['id']==connection),None)
+        if not c or c['method']!='ssh' or cfg.ssh_mode(c)!='key':raise ValueError('저장한 지정 키 연결을 선택하세요.')
+        ref=next((ref for ref in state['credentials'] if ref['id']==c['credential'] and ref['source']=='bitwarden'),None)
+        if not ref:raise ValueError('이 연결의 키는 기존 공급 도구에서 준비하세요.')
+        self.items[ref['item']]=dict(id=ref['item'],name=c['name'],kind=ref['kind'])
+        record=self.prepare(ref['item']);stored=self.prepared[record['id']];stored['path']=c['publicKey']
+        try:
+            public=Path(c['publicKey']).expanduser().resolve();info=public.stat()
+            if public.is_relative_to(Path.home().resolve()) and info.st_uid==os.getuid() and info.st_size<=16384:stored['saved']=' '.join(public.read_text().split()[:2])==stored['public']
+        except (OSError,UnicodeError):pass
+        return dict(stored)
     def status(self):
         if self.session and time.monotonic()>=self.expires:self.forget()
         for key,deadline in list(self.added.items()):
@@ -46,7 +88,7 @@ class Workflow:
             try:unlocked=not probe.returncode and json.loads(probe.stdout).get('status')=='unlocked'
             except (ValueError,TypeError):unlocked=False
             if not unlocked:self.forget()
-        return dict(terminals=terminal_handoff.available(),default_terminal=terminal_handoff.settings(),generation=self.generation,connected=bool(self.session),expires_in=max(0,int(self.expires-time.monotonic())) if self.session else 0,
+        return dict(keys=self.key_status(),terminals=terminal_handoff.available(),default_terminal=terminal_handoff.settings(),generation=self.generation,connected=bool(self.session),expires_in=max(0,int(self.expires-time.monotonic())) if self.session else 0,
             pending=bool(self.ticket and time.monotonic()<self.ticket_until),installed={x:bool(shutil.which(x)) for x in ('bw','ssh-add','ssh-keygen','ssh-agent')},
             agent_socket=(self.agent_env or {}).get('SSH_AUTH_SOCK'),managed_keys=len(self.added),prepared=[dict(record) for record in self.prepared.values()])
     def connect(self,launch=False):
@@ -183,12 +225,13 @@ class Workflow:
         with self.lock:
             if self.closed:raise ValueError('대시보드가 종료 중입니다.')
             action=request.get('action')
-            allowed={'status':set(),'set_terminal':{'terminal'},'connect':{'launch'},'search':{'query','purpose'},'prepare_public':{'item'},'save_public':{'id','path'},'supply_key':{'id','lifetime'},'check_token':{'item'},'cleanup':set(),'disconnect':set()}
+            allowed={'status':set(),'set_terminal':{'terminal'},'connect':{'launch'},'search':{'query','purpose'},'prepare_saved':{'connection'},'prepare_public':{'item'},'save_public':{'id','path'},'supply_key':{'id','lifetime'},'check_token':{'item'},'cleanup':set(),'disconnect':set()}
             if action not in allowed or set(request)-{'action'}!=allowed[action]:raise ValueError('지원하지 않는 비밀 관리 요청입니다.')
             if action=='status':return self.status()
             if action=='set_terminal':return terminal_handoff.save(request['terminal'])
             if action=='connect':return self.connect(request['launch'] is True)
             if action=='search':return self.search(request['query'],request['purpose'])
+            if action=='prepare_saved':return self.prepare_saved(request['connection'])
             if action=='prepare_public':return self.prepare(request['item'])
             if action=='save_public':return self.save_public(request['id'],request['path'])
             if action=='supply_key':return self.supply(request['id'],request['lifetime'])

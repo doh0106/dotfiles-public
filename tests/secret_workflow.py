@@ -127,6 +127,16 @@ else:sys.exit(9)
   with patch('secret_session.capture',side_effect=capture),patch('builtins.input',return_value='synthetic-client-id'),patch('secret_session.getpass.getpass',side_effect=['synthetic-client-secret','synthetic-master']),patch('secret_session.urllib.request.urlopen',return_value=Response()),patch('secret_session.os.execve') as execute,contextlib.redirect_stdout(output):secret_session.connect(str(request))
   self.assertEqual(calls[1][0],['bw','login','--apikey','--nointeraction']);self.assertEqual(calls[1][1]['BW_CLIENTSECRET'],'synthetic-client-secret')
   self.assertNotIn('BW_CLIENTSECRET',execute.call_args.args[2]);self.assertNotIn('DOTFILES_VAULT_PASSWORD',execute.call_args.args[2]);self.assertNotIn('synthetic-master',output.getvalue());self.assertNotIn('synthetic-client-secret',output.getvalue())
+ def test_live_readiness_survives_vault_disconnect_and_detects_agent_cleanup(self):
+  key=self.prepared();supplied=self.workflow.supply(key['id'],60)
+  state=cfg.defaults();state['profiles']=[];c=cfg.new_connection('','saved-key');c.update(enabled=True,publicKey=key['path'],agentSocket=supplied['agent_socket']);state['connections']=[c];cfg.DATA.mkdir(parents=True,exist_ok=True);cfg.SETTINGS.write_text(json.dumps(state))
+  self.workflow.forget();status=self.workflow.status();self.assertFalse(status['connected']);self.assertEqual(status['keys'][0]['state'],'ready')
+  self.workflow.cleanup();self.assertEqual(self.workflow.status()['keys'][0]['state'],'not_loaded')
+ def test_prepare_saved_reuses_matching_public_file_without_rewriting(self):
+  key=self.prepared();path=Path(key['path']);before=path.stat().st_mtime_ns
+  state=cfg.defaults();state['profiles']=[];state['credentials']=[dict(id='key',purpose='ssh-key',source='bitwarden',kind='sshkey',item='key-1234',variable='',helper='cache',username='')]
+  c=cfg.new_connection('','example');c.update(enabled=True,credential='key',publicKey=key['path']);state['connections']=[c];cfg.DATA.mkdir(parents=True,exist_ok=True);cfg.SETTINGS.write_text(json.dumps(state))
+  self.workflow.forget();self.connect();prepared=self.workflow.prepare_saved(c['id']);self.assertTrue(prepared['saved']);self.assertEqual(prepared['path'],str(path));self.assertEqual(path.stat().st_mtime_ns,before)
  def test_terminal_handoff_keeps_passwords_and_session_out_of_output(self):
   import secret_session,io,contextlib
   handoff=self.workflow.connect();request=Path(self.workflow.launch_dir.name)/'request.json'

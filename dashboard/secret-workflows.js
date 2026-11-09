@@ -10,7 +10,7 @@ async function flowAction(request,done=()=>{}){
  finally{secretFlow.busy=false;renderSecretFlow()}
 }
 function flowButton(title,request,done,disabled=false){const b=button(title,()=>flowAction(typeof request==='function'?request():request,done),'btn');b.disabled=secretFlow.busy||disabled||snapshot.design_preview;return b;}
-function flowStep(root,number,title,text){const box=groupBox(number+'. '+title,root);if(text)box.append(el('p',text,'tool-state'));return box;}
+function flowStep(root,number,title,text){const box=groupBox((number?number+'. ':'')+title,root);if(text)box.append(el('p',text,'tool-state'));return box;}
 function flowVault(root){
  const box=flowStep(root,1,'Bitwarden 연결','로그인 정보는 터미널에서 입력합니다. 대시보드 연결은 15분 동안 유지하며 세션 값을 브라우저나 파일에 저장하지 않습니다.');
  const status=secretFlow.status;
@@ -50,23 +50,25 @@ function flowRegisterKey(){
  mark();toast('키·공급 정책과 연결을 초안에 반영했습니다. 변경 검토에서 저장·적용하세요.');renderSecretFlow();
 }
 function renderSecretSshWorkflow(){
- const root=$('page-body');root.replaceChildren();flowVault(root);flowSearch(root,'ssh-key');
- const box=flowStep(root,3,'공개키 저장·정책·agent 공급','공개키는 .pub 파일로 저장합니다. 공개키 파일 저장과 agent 공급 버튼은 즉시 실행됩니다. 설정 초안 저장과 별개이며 개인키는 파일로 복사하지 않습니다.');const key=secretFlow.key;
+ const root=$('page-body');root.replaceChildren();renderKeyReadiness(root);const recurring=groupBox('작업할 때 · 인증 준비',root);recurring.append(el('p','저장한 설정은 유지됩니다. 보관소 연결이나 agent의 키가 만료되었을 때만 다시 준비하세요.','tool-state'));flowVault(recurring);
+ const setup=el('details',undefined,'group');setup.open=!draft.connections.some(c=>c.method==='ssh'&&sshMode(c)==='key');setup.append(el('summary','처음 한 번 · 키와 접속 설정 등록'),el('p','항목 선택·공개키 파일·사용 연결·정책을 저장합니다. 완료한 설정은 매번 만들지 않아도 됩니다.','hint'));root.append(setup);flowSearch(setup,'ssh-key');
+ const box=flowStep(setup,'','공개키 파일 준비','공개키는 .pub 파일로 저장합니다. 공개키 파일 저장과 agent 공급 버튼은 즉시 실행됩니다. 설정 초안 저장과 별개이며 개인키는 파일로 복사하지 않습니다.');const key=secretFlow.key;
  if(!key){box.append(el('p','앞 단계에서 항목을 선택하면 공개키와 지문을 확인할 수 있습니다.','hint'));}
  else{
   box.append(el('strong',key.name),el('p',key.fingerprint,'tool-state'),el('pre',key.public,'long-pre'));
   const keyPath=field(box,'공개키 저장 위치',key.path,null,value=>{key.path=value;key.saved=false},'workflow-public-key');keyPath.placeholder='예: ~/.ssh/keys/personal.pub';
   box.append(flowButton(key.saved?'공개키 저장 확인됨 · 다시 확인':'공개키 파일 저장',()=>({action:'save_public',id:key.id,path:key.path}),result=>{secretFlow.key=result}));
-  field(box,'새로 공급하는 키의 유지 시간 · 초',draft.session.keyLifetime,null,value=>{draft.session.keyLifetime=Number(value);mark()},'workflow-key-ttl','number');
-  box.append(el('p','60~86400초. 이미 agent에 있는 동일한 키는 재사용하며 기존 유지 시간을 바꾸지 않습니다. 이 도구가 공급한 키만 정리합니다. 새 정책은 초안 저장으로 유지됩니다.','hint'));
-  const supply=flowButton('SSH agent에 키 공급',()=>({action:'supply_key',id:key.id,lifetime:draft.session.keyLifetime}),result=>{secretFlow.key=result},!key.saved||!secretFlow.status?.connected);box.append(supply);keyPath.addEventListener('input',()=>{supply.disabled=true});
-  if(key.loaded)box.append(badge('공급 실행 완료 · 서버 접속은 별도 확인','green'),el('p',key.dedicated_agent?'전용 agent를 사용합니다. 연결 설정에 이 소켓을 함께 지정하며 대시보드 종료 후 다시 공급해야 합니다.':'현재 agent를 재사용합니다. 다른 키의 설정은 변경하지 않습니다.','hint'));
+  const supplyBox=groupBox('선택한 키를 이번 작업에 준비',recurring);
+  field(supplyBox,'새로 공급하는 키의 유지 시간 · 초',draft.session.keyLifetime,null,value=>{draft.session.keyLifetime=Number(value);mark()},'workflow-key-ttl','number');
+  supplyBox.append(el('p','60~86400초. 이미 agent에 있는 동일한 키는 재사용하며 기존 유지 시간을 바꾸지 않습니다. 이 도구가 공급한 키만 정리합니다. 새 정책은 초안 저장으로 유지됩니다.','hint'));
+  const supply=flowButton('SSH agent에 키 공급',()=>({action:'supply_key',id:key.id,lifetime:draft.session.keyLifetime}),result=>{secretFlow.key=result},!key.saved||!secretFlow.status?.connected);supplyBox.append(supply);keyPath.addEventListener('input',()=>{supply.disabled=true});
+  if(key.loaded)supplyBox.append(badge('공급 실행 완료 · 서버 접속은 별도 확인','green'),el('p',key.dedicated_agent?'전용 agent를 사용합니다. 연결 설정에 이 소켓을 함께 지정하며 대시보드 종료 후 다시 공급해야 합니다.':'현재 agent를 재사용합니다. 다른 키의 설정은 변경하지 않습니다.','hint'));
  }
- const target=flowStep(root,4,'접속 설정에 연결·검토','이 단계는 설정 초안을 만듭니다. 검토·저장·적용과 실제 서버 접속 확인은 별도로 진행합니다.');
+ const target=flowStep(setup,'','접속 설정 연결·저장','이 단계는 설정 초안을 만듭니다. 검토·저장·적용과 실제 서버 접속 확인은 별도로 진행합니다.');
  recordChoiceField(target,'키를 사용할 SSH 연결',secretFlow.target,()=>flowConnectionRecords('ssh'),value=>{secretFlow.target=value;renderSecretFlow()},'workflow-key-target','SSH 연결 선택');
  const apply=button('선택한 키·정책을 연결 초안에 반영',flowRegisterKey,'btn primary');apply.disabled=!key?.saved||!secretFlow.target||secretFlow.busy;target.append(apply,button('Git 연결 추가·확인 →',()=>navigate('connections',{primary:true}),'quiet'),button('원격 SSH 대상 추가·확인 →',()=>navigate('servers',{primary:true}),'quiet'),button('변경 검토·적용 →',()=>navigate('plan',{primary:true}),'quiet'));
  target.append(el('p','새 연결에는 서버 주소·SSH 사용자가 필요합니다. 공개키의 서버 등록과 실제 접속 성공은 이 과정에서 자동 처리하지 않습니다.','hint'));
- const cleanup=flowStep(root,5,'작업 후 정리','대시보드에서 새로 공급한 키만 제거합니다. 다른 터미널의 키·인증 세션과 서버 토큰은 변경하지 않습니다.');cleanup.append(flowButton('이 대시보드가 공급한 키 정리',{action:'cleanup'},()=>{if(secretFlow.key)secretFlow.key.loaded=false}));
+ const cleanup=flowStep(root,'','작업 끝 · 이번에 추가한 agent 키 해제','메모리의 agent에서 이번 대시보드가 추가한 키만 해제합니다. Bitwarden 원본, 로컬 .pub 파일, GitHub 등록 키, 저장한 접속 설정은 삭제하지 않습니다. 원래 agent에 있던 키도 유지합니다.');cleanup.append(flowButton('이번에 추가한 agent 키만 해제',{action:'cleanup'},()=>{if(secretFlow.key)secretFlow.key.loaded=false}));
  renderSecretInventory(root,'ssh-key');
 }
 function renderSecretTokenWorkflow(){
@@ -96,4 +98,18 @@ function renderProgramSupply(box,token){
  },'btn primary');apply.disabled=!token||secretFlow.busy;box.append(apply,button('변경 검토·적용 →',()=>navigate('plan',{primary:true}),'quiet'));
  box.append(el('p','저장 후 로그인에 사용한 터미널에서 아래 형식으로 대상 프로그램을 실행하세요. 프로그램이 지정한 환경변수를 읽어야 합니다. 기존 Jira·Confluence 인증 파일은 변경하지 않습니다.','hint'));
  if(secretFlow.programReference)box.append(el('pre',snapshot.secret_supply_command+' --reference '+secretFlow.programReference+' -- PROGRAM ARGUMENTS','long-pre'));
+}
+
+function renderKeyReadiness(root){
+ const rows=secretFlow.status?.keys||[],box=groupBox('현재 SSH 인증 준비 상태',root);
+ const selected=rows.find(row=>row.id==='prepared:'+secretFlow.key?.id)||rows.find(row=>row.id===secretFlow.target),ready=rows.filter(row=>row.state==='ready');
+ const next=selected?.state==='ready'?'선택한 키는 준비됐습니다. 접속 설정의 저장·적용 여부를 확인하세요.':selected?'아래에서 선택한 키를 다시 준비하세요.':ready.length?'준비된 키가 있습니다. 사용할 연결의 상태를 확인하세요.':rows.length?'저장한 키의 상태를 확인하고 필요한 키만 다시 준비하세요.':'처음 한 번 항목을 선택하고 키·접속 설정을 등록하세요.';
+ box.append(el('strong','다음 할 일: '+next),el('p','이 대시보드 또는 연결에 지정한 agent 기준입니다. 다른 터미널의 agent는 다를 수 있으며 실제 서버 접속·권한 확인은 별도입니다.','hint'),flowButton('키 준비 상태 새로 확인',{action:'status'}));
+ for(const row of rows){const card=el('article',undefined,'auth-link-card');card.append(el('strong',row.name),badge(({ready:'키 준비됨',not_loaded:'키 공급 필요',agent_unavailable:'agent 연결 필요',public_missing:'공개키 파일 확인 필요'})[row.state],row.state==='ready'?'green':'amber'),el('p',row.path,'hint'),el('p',row.source==='existing'?'기존 SSH 설정에서 감지 · 원본 유지':row.source==='saved'?'저장한 접속 설정':'이번에 준비한 공개키','hint'));
+  if(row.state==='ready')card.append(el('p',row.expires_in===null?'남은 유지 시간은 알 수 없습니다. 기존 키의 TTL은 변경하지 않습니다.':'이 대시보드가 추가한 키 · 약 '+Math.ceil(row.expires_in/60)+'분 남음','hint'));
+  else if(row.source==='saved')card.append(flowButton('저장한 이 키 다시 준비',{action:'prepare_saved',connection:row.id},result=>{secretFlow.key=result},!secretFlow.status?.connected));
+  else if(row.source==='existing')card.append(el('p','기존 bws 등 공급 도구로 준비하거나 처음 설정에서 이 키를 등록하세요.','hint'));
+  box.append(card);
+ }
+ if(!secretFlow.status)box.append(el('p','상태를 확인하는 중입니다.','hint'));
 }
