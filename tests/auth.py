@@ -13,11 +13,13 @@ import time
 REPO=Path(__file__).resolve().parents[1]
 
 def run(args,env,ok=True,cwd=None):
-    p=subprocess.run([str(a) for a in args],env=env,cwd=cwd,capture_output=True,text=True)
+    # Do not let the repository running this test choose a fixture's connection by origin.
+    p=subprocess.run([str(a) for a in args],env=env,cwd=cwd or env.get('HOME'),capture_output=True,text=True)
     if ok and p.returncode:raise AssertionError(f'{args}: {p.returncode}\n{p.stdout}\n{p.stderr}')
     return p
 
-with tempfile.TemporaryDirectory(prefix='dotfiles-auth-') as temporary:
+# Keep synthetic HOME short enough for OpenSSH's Unix-domain socket path on macOS.
+with tempfile.TemporaryDirectory(prefix='dotfiles-auth-',dir='/private/tmp' if Path('/private/tmp').is_dir() else None) as temporary:
     home=Path(temporary);fixtures=home/'fixtures';fixtures.mkdir();mocks=home/'mocks';mocks.mkdir()
     env=dict(os.environ,HOME=str(home),GIT_CONFIG_NOSYSTEM='1',FIXTURES=str(fixtures))
     for k in ('GIT_CONFIG_GLOBAL','SSH_AUTH_SOCK','SSH_AGENT_PID','BW_SESSION','GH_TOKEN','GITHUB_TOKEN'):env.pop(k,None)
@@ -150,6 +152,9 @@ bwe || exit 9
         run(['zsh','-c','source "$HOME/.zshrc"; bws personal && bwe'],shared)
         assert len(run(['ssh-add','-L'],shared).stdout.splitlines())==2
     finally:run(['ssh-agent','-k'],shared,False)
+    # The one-second expiry belongs only to the preceding case. Restore the
+    # normal TTL before testing fresh-agent startup and cleanup under load.
+    data['lifetime']=3600;config.write_text(json.dumps(data))
     # A shell-created empty agent is stopped on cleanup.
     owned_script='''source "$HOME/.zshrc"
 export BW_SESSION=fixture-session GH_TOKEN=ambient MY_EXTRA_TOKEN=fixture-extra

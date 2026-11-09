@@ -28,14 +28,14 @@ def link(source, target):
     target.symlink_to(source, target_is_directory=source.is_dir())
 
 
-def block(path, name, contents, prepend=False, preserve_link=False):
+def block(path, name, contents, prepend=False, preserve_link=False, preserve_legacy_contents=False):
     begin, end = f'# >>> dotfiles {name} >>>', f'# <<< dotfiles {name} <<<'
     old = path.read_text() if path.exists() else ''
     # Migrate the legacy whole-file symlink without editing its source repository.
     if path.is_symlink() and not preserve_link:
         legacy = str(path.resolve()).endswith(('/links/zsh/zshrc', '/links/ssh/config'))
         path.rename(path.with_name(path.name + '.bak.' + datetime.now().strftime('%Y%m%d%H%M%S%f')))
-        if legacy:
+        if legacy and not preserve_legacy_contents:
             old = ''
     if (begin in old) != (end in old):
         raise SystemExit(f'Incomplete managed block in {path}; repair it first.')
@@ -76,15 +76,30 @@ def safe_ssh_copy(source, target):
 
 
 def install(repo, mode):
+    from host_inventory import references
+    from configuration import read_settings,ssh_mode
+    active=[c for c in read_settings()[0]['connections'] if c['enabled'] and c['method']=='ssh']
+    delegates_ssh=any(ssh_mode(c)=='system' for c in active)
+    preserve_existing=bool(references()) or delegates_ssh
     config.mkdir(parents=True, exist_ok=True)
-    link(repo / 'links/zsh/dotfiles.zsh', config / 'shell.zsh')
-    link(repo / 'links/zsh/zshrc', config / 'zshrc')
-    block(home / '.zshrc', 'shell', 'source "$HOME/.config/dotfiles/zshrc"')
-    safe_ssh_copy(repo / 'links/ssh/config', home / '.ssh/config.d/dotfiles.conf')
-    for key in (repo / 'links/ssh/keys').glob('*.pub'):
-        link(key, home / '.ssh/keys' / key.name)
-    block(home / '.ssh/config', 'ssh', 'Include ~/.ssh/config.d/dotfiles.conf\nHost *', prepend=True)
-    (home / '.ssh/config').chmod(0o600)
+    shell=config/'shell.zsh'
+    if preserve_existing and (home/'.zshrc').exists() and shell.resolve()!=(repo/'links/zsh/dotfiles.zsh').resolve():
+        # Reference adoption does not transfer ownership of the legacy shell.
+        # Explicitly applied new selections are an additive source after it.
+        import shlex
+        block(home/'.zshrc','dashboard extras','source '+shlex.quote(str(repo/'links/zsh/dotfiles.zsh')),preserve_legacy_contents=True)
+    else:
+        link(repo / 'links/zsh/dotfiles.zsh', shell)
+        link(repo / 'links/zsh/zshrc', config / 'zshrc')
+        block(home / '.zshrc', 'shell', 'source "$HOME/.config/dotfiles/zshrc"',preserve_legacy_contents=preserve_existing)
+    # Delegation-only setups do not install any SSH includes or public-key links.
+    if not delegates_ssh or any(ssh_mode(c)=='key' for c in active):
+        safe_ssh_copy(repo / 'links/ssh/config', home / '.ssh/config.d/dotfiles.conf')
+        for key in (repo / 'links/ssh/keys').glob('*.pub'):
+            link(key, home / '.ssh/keys' / key.name)
+        ssh_include=('Host *\n' if preserve_existing else '')+'Include ~/.ssh/config.d/dotfiles.conf\nHost *'
+        block(home / '.ssh/config', 'ssh', ssh_include, prepend=not preserve_existing,preserve_legacy_contents=preserve_existing)
+        (home / '.ssh/config').chmod(0o600)
     import subprocess
     # A stable include path avoids accumulating paths when the checkout is moved.
     link(repo / 'links/git', config / 'git')

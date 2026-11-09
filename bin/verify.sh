@@ -33,7 +33,11 @@ if [[ "${1:-}" == --session ]]; then
   if [[ "${mode:-}" == *-bitwarden ]]; then
     check 'vault unlocked' sh -c '[ "$(python3 "$1" vault-status)" = unlocked ]' _ "$repo_dir/bin/auth.py"
   fi
-  check 'selected connection authentication' python3 "$repo_dir/bin/auth.py" check "${profile_args[@]}"
+  if [[ "${mode:-}" == ssh-system ]]; then
+    echo 'SKIP: authentication is delegated to existing OpenSSH; verify the actual connection separately.'
+  else
+    check 'selected connection authentication' python3 "$repo_dir/bin/auth.py" check "${profile_args[@]}"
+  fi
 
 fi
 if [ "$failures" -gt 0 ]; then echo "Failed checks: $failures"; exit 1; fi

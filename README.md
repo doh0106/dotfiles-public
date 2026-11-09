@@ -1,10 +1,15 @@
 # dotfiles-public
 
 공개 설정 코드를 가져와 로컬 대시보드에서 필요한 기능을 고른다.
-대시보드는 설정 파일과 실행 안내를 만들고, 사람 또는 AI가 안내를 실행한다.
+대시보드의 **내 환경**에서 선택한 설정을 저장하고 도구 설치·설정 적용·인증·업데이트를 진행한다.
+[대시보드 사용 순서](docs/dashboard-control-center.md)를 참고한다.
 설치·로그인·키 로드는 사용자가 선택한 때에만 진행한다.
 
 ## 시작하기
+
+빈 컴퓨터에서 전체 환경을 준비할 때는 [처음 설정 순서](docs/new-machine-setup.md)를 따른다.
+호스트 설정, 서비스 인증, 컨테이너 개발, Tailscale 원격 접속을 단계별로 연결한다.
+
 
 Git과 Python 3를 준비한 뒤 저장소를 clone한다. Git이 없다면 ZIP으로 받아 풀어도 된다.
 공개 저장소는 `doh0106/dotfiles-public`이다. 기존 비공개 `dotfiles` 저장소와 이력을 분리한다.
@@ -45,7 +50,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\apps\windows\Dotfiles.
 
 실행기는 저장소 위치를 기억하므로 폴더를 옮겼다면 설치 실행기를 다시 실행한다.
 앱 실행 자체는 프로그램 설치·configure·Bitwarden 로그인을 수행하지 않는다.
-계속 켜져 있는 터미널의 인증 세션을 앱에 전달하지 않으며, 인증은 기존 적용 안내를 따른다.
+계속 켜져 있는 터미널의 인증 세션을 앱에 자동 전달하지 않는다. Bitwarden은 대시보드에서 연결하고, SSH 키는 내 환경 또는 원격 접속 → SSH agent에서 공급한다.
 
 화면 아래 **앱 서버 종료**는 로컬 서버를 종료한다. 저장하지 않은 초안이 있으면 확인한다.
 아이콘을 여러 번 눌러도 같은 저장소의 앱 서버를 재사용한다. 창을 모두 닫거나 창에서 5분간
@@ -66,6 +71,7 @@ python3 bin/desktop.py stop
 사용할 checkout은 `~/personal/dotfiles` 하나로 유지한다. 셸·Git 설정은 이 checkout의 파일에
 연결하고, 대시보드에서 저장한 개인 선택은 `~/.config/dotfiles/dashboard/`에 별도로 보관한다.
 코드 변경은 이 checkout에서 커밋한 뒤 원격과 동기화한다. 다른 로컬 사본을 origin으로 연결하지 않는다.
+대시보드의 **내 환경 → 환경 코드 업데이트**에서 확인·가져오기·재시작할 수 있다. 아래는 수동 경로다.
 
 ```sh
 cd "$HOME/personal/dotfiles"
@@ -82,12 +88,12 @@ WSL을 외부에서 접속하는 선택 기능은 [WSL SSH 안내](docs/wsl-ssh.
 | 영역 | 정하는 것 | 다른 영역과의 관계 |
 |---|---|---|
 | 셸과 테마 | 설치된 Oh My Zsh, 테마, 프레임워크 경로 | 서비스 로그인 없이 사용 가능 |
-| 선택 도구 | 이동·검색·빌드·런타임·AI·서비스 도구를 개별 선택 | 설치 여부와 활성화는 별개 |
+| 도구 선택 | 이동·검색·빌드·런타임·AI·서비스 도구를 개별 선택 | 설치 여부와 활성화는 별개 |
 | 작업 프로필 | 폴더 범위, 커밋 이름·이메일 | `gitdir`로 선택. 접속 계정을 의미하지 않음 |
-| 연결과 서비스 | 프로필, 서비스 제품, 호스트, Git SSH/HTTPS 또는 SSH 서버 | 같은 프로필에 여러 서비스와 방식을 연결 가능 |
-| 인증 참조 | 공급자, 항목 이름·형식, 공개키 경로 등 | 개인키·토큰 값은 화면에 입력하지 않음 |
+| 저장소 · 서버 연결 | Git 호스트·SSH 서버, 접속 방식, 인증 참조, gh/glab 사용 | 프로필 없이 직접 선택 가능. 필요하면 폴더별 자동 적용 |
+| Git · SSH 인증 참조 | 공급자, 항목 이름·형식, 공개키 경로 등 | 개인키·토큰 값은 화면에 입력하지 않음 |
 | API 도구 | GitHub의 gh, GitLab의 glab, 별도 API 토큰 | Git SSH/HTTPS와 독립적으로 켜거나 끔 |
-| 키와 세션 | 새 SSH 키 TTL, 사용 후 정리 | 토큰의 서버 만료·폐기와는 별개 |
+| SSH 키 · 인증 세션 | 새 SSH 키 TTL, 사용 후 정리 | 토큰의 서버 만료·폐기와는 별개 |
 
 예를 들어 `personal` 폴더 프로필에 GitHub SSH와 GitLab HTTPS를 함께 연결할 수 있다.
 회사 프로필이나 비공개 overlay는 필요할 때만 추가한다. 처음부터 회사 설정을 요구하지 않는다.
@@ -95,16 +101,51 @@ WSL을 외부에서 접속하는 선택 기능은 [WSL SSH 안내](docs/wsl-ssh.
 GitHub Enterprise와 GitLab Self-Managed도 호스트를 지정한다. SSH 접속 호스트와 API 서비스 호스트가
 다르면 API 탭에서 서비스 호스트를 따로 지정한다. API는 HTTPS와 도메인 루트 구성을 지원한다.
 
+## 대시보드 메뉴
+
+환경 현황은 현재 감지된 상태와 대시보드 관리 설정을 구분한다. 기존 환경을 사용 중이면
+[기존 설정 감지·가져오기](docs/existing-settings.md)로 원본을 유지한 채 참조를 등록할 수 있다.
+
+환경 현황은 각 영역의 상태와 지금 할 일을 모아 보여준다. **처음 설정**은
+독립된 안내 화면이며, 설정 자체는 아래 담당 화면에서 관리한다.
+
+| 메뉴 | 세부 설정과 역할 |
+|---|---|
+| 환경 현황 | 감지된 현재 상태와 관리 설정 요약 |
+| 변경 검토·적용 | 직접 관리 설정의 검토·저장, 적용 방법, 실행 확인 |
+| 처음 설정 | 설정 순서 안내와 단계별 진행 기록 |
+| 앱·도구 | 프로그램 선택·설치 안내, 터미널·셸·테마, AI 도구·Agent Kit 스킬 안내 |
+| Git | 원격 저장소 접근, 폴더별 커밋 작성자·적용 규칙 |
+| 원격 접속 | SSH 접속 대상, Tailscale·집 WSL 준비 |
+| 비밀 관리 | SSH 키 준비, 서비스 토큰 공급, 공급·연동, 비밀 저장소, 키·세션 정책 |
+| 프로젝트 실행 환경 | 선택한 프로젝트의 Dev Container 구성·상태 조회, 실행·접속·중지 명령 안내 |
+| 외부 서비스 | Jira·Confluence·Google의 계정 연결·인증·사용 설정 창 |
+
+Git과 SSH 서버는 각 메뉴에서 별도 목록으로 표시한다. 연결 종류는 해당 메뉴에서 정해지며,
+기존 연결·프로필·인증 참조를 보존한다. 새 SSH 연결은 기존 OpenSSH 설정에 맡기는 것이 기본이다.
+키·토큰과 공급 도구는 비밀 관리에서 별도로 관리한다. 실제 비밀값을 메뉴별로 복제하지 않는다.
+
+외부 서비스와 프로젝트 실행 환경의 관측은 선택 설치한 environment-core를 사용한다.
+AI 스킬 설치 상태는 자동 관측하지 않으며 Agent Kit의 도구별 설치 안내로 연결한다.
+프로젝트 실행·접속·중지는 안내한 dev-* 명령으로 진행하며 대시보드가 자동 실행하지 않는다.
+
 ## 화면에서 작업하기
 
-1. **셸과 테마**에서 원하는 프레임워크·테마를 고른다. 글꼴·글자 크기 조절은 화면 미리보기 전용이다.
-2. **작업 프로필**에서 서로 겹치지 않는 프로젝트 폴더와 Git 이름·이메일을 정한다.
-3. **연결과 서비스**에서 서비스·호스트·Git 방식을 정하고 필요한 인증 참조를 연결한다.
-   관계가 헷갈리면 선택한 연결의 맵을 펼친다. SSH 서버도 같은 화면에서 별도 종류로 추가한다.
-4. 필요하다면 **API** 탭에서 gh/glab와 토큰 참조를 켠다. Git만 사용할 때는 꺼둔다.
-5. **변경 검토 → 저장 · 설정 파일 생성**으로 로컬 파일을 생성한다.
-6. **적용 안내**에서 미설치 도구 안내와 configure·새 셸·인증 명령을 실행한다.
-   안내를 복사해 AI에게 전달할 수도 있다.
+처음 기기를 설정할 때는 **시작 안내 → 처음 설정**의 순서를 따른다. 각 설정 화면에서
+선택을 확인하고 다음 단계로 이동한다. 저장과 실제 적용은 따로 표시한다.
+[처음 설정 안내](docs/first-run-setup.md)에 진행 기록과 선택 기능을 설명했다.
+
+
+1. **앱·도구 → 터미널·셸·테마**에서 원하는 구성을 고른다.
+2. **앱·도구 → 프로그램 설치**에서 필요한 도구를 선택한다.
+3. **Git → 원격 저장소 접근**에서 서버와 접속 방식을 정한다. SSH는 기존 설정 사용이 기본이며 프로필 없이 사용할 수 있다.
+4. 필요하면 **Git → 커밋 작성자·적용 규칙**에서 폴더를 만들고 앞서 등록한 연결을 지정한다. 커밋 작성자도 함께 정할 수 있다.
+5. **변경 검토·적용**에서 초안을 검토하고 설정 파일을 저장한다.
+6. 같은 화면에서 저장한 설정의 적용 명령을 실행하고 확인 기록을 남긴다.
+
+SSH 키·서비스 토큰은 **비밀 관리**의 단계별 흐름에서 준비한다. 필요한 경우 **공급·연동**에서 연결에 공급할 항목을 선택한다.
+Bitwarden은 비밀 저장소이며, SSH 키 로드·토큰 주입은 별도 사용 기능이다. 일반 비밀번호 탭은 제공하지 않으며 본문은 저장소에서 관리한다. [SSH 키·토큰 준비 안내](docs/secret-workflows.md)를 따른다.
+폴더 규칙과 인증 참조는 선택된 항목의 주요 내용을 본문에서 확인하며, 선택·변경 창에서 검색하고 비교한다.
 
 적용 안내는 현재 선택에 따라 확인 → 인증 재료 → 저장 → 미설치 도구 → configure → 새 zsh →
 Bitwarden 상태별 로그인/잠금 해제 → 연결별 인증 준비 → 접속 확인 → 작업 후 정리 순서로 만든다.
@@ -153,9 +194,9 @@ git remote set-url origin https://YOUR-HOST/OWNER/REPO.git
 python3 bin/dashboard.py plan  # 화면 없이 저장된 설정의 적용 안내 출력
 ```
 
-## 선택 도구 설치와 zi
+## 도구 선택 설치와 zi
 
-선택 도구 화면에서 필요한 항목만 켠 뒤 저장하고 적용 안내를 따른다.
+앱·도구의 프로그램 설치 화면에서 필요한 항목만 켠 뒤 저장하고 적용 안내를 따른다.
 저장·configure는 설치 프로그램을 실행하지 않는다. 안내의 명령을 사람이 또는 AI가 실행한다.
 이미 설치된 도구는 재설치하지 않으며, 기능을 꺼도 프로그램을 삭제하지 않는다.
 
@@ -169,7 +210,7 @@ python3 bin/dashboard.py plan  # 화면 없이 저장된 설정의 적용 안내
 | 서비스 도구 | AWS CLI, ngrok | CLI만 설치. 계정 인증·토큰 등록·터널 시작은 별도 |
 
 Oh My Zsh는 셸과 테마 화면에서 선택한다. 없으면 선택한 경로에 설치하는 안내가 나온다.
-GitHub·GitLab CLI는 연결과 서비스의 API 선택을 따른다. Git만 쓰면 설치할 필요가 없다.
+GitHub·GitLab CLI는 원격 저장소 접근의 추가 기능 선택을 따른다. Git만 쓰면 설치할 필요가 없다.
 외부 패키지 저장소가 필요한 CLI는 공식 설치 문서 링크를 제공한다.
 
 nvm을 선택하면 설치 안내가 nvm → 선택한 Node 버전 → Gemini 순서로 나온다.
@@ -201,12 +242,13 @@ z dotfiles         # 가장 잘 맞는 기록으로 바로 이동
 
 | 용도 | 지원 공급자 | 실제 사용 |
 |---|---|---|
-| Git SSH / 서버 SSH | Bitwarden, 기존 SSH agent | `.pub`로 선택한 키를 agent에서 사용 |
+| Git SSH / 서버 SSH · 기본 | 기존 OpenSSH 설정 | 공개키·보관소 등록 없이 기존 설정과 인증 절차에 위임 |
+| Git SSH / 서버 SSH · 지정 키 | 기존 SSH agent, 선택적인 비밀 공급 | `.pub`로 선택한 키. Bitwarden 등의 연동은 비밀 관리에서 설정 |
 | Git HTTPS | Bitwarden, 외부 Git credential helper, 인증 없음 | 호스트별 helper. 공개 읽기는 인증 없이 가능 |
 | gh / glab API | Bitwarden, 지정 환경변수 | 해당 호스트의 명령 자식 프로세스에 토큰 주입 |
 
 Bitwarden에는 SSH Key 또는 Secure Note의 개인키, Secure Note 또는 Login password의 토큰을 둔다.
-`.pub` 파일은 연결에 지정한 경로에 미리 준비해야 한다. 공개키를 Bitwarden에서 자동 추출하지 않는다.
+지정 키 방식에서만 `.pub` 파일을 연결에 지정한 경로에 미리 준비해야 한다. 공개키를 Bitwarden에서 자동 추출하지 않는다.
 Git 설정과 키 로더가 같은 연결의 공개키 경로를 사용한다.
 
 ```sh
@@ -218,8 +260,10 @@ bwglab --connection personal-gitlab mr list
 bwe                                      # 이 셸이 추가한 키·세션 정리
 ```
 
-연결 ID는 화면에서 정한 값을 사용한다. 한 프로필에 연결이 하나뿐이면 `bws personal`도 된다.
-저장소 안에서는 gitdir 프로필과 origin의 호스트·방식으로 선택한다. 모호하면 `--connection ID`를 요구한다.
+연결 ID는 연결을 추가할 때 자동 생성하며 상세 화면에서 확인한다. 한 프로필에 연결이 하나뿐이면 `bws personal`도 된다.
+프로필을 연결했다면 저장소 안에서 gitdir 프로필과 origin의 호스트·방식으로 선택한다.
+프로필이 없으면 `--connection ID`로 직접 선택한다. 생성된 `connection-ID.gitconfig`는
+전체 폴더에 자동 연결하지 않으며 적용 안내의 `git -c include.path=…` 명령으로 사용한다. 모호하면 `--connection ID`를 요구한다.
 최초 clone에는 대상 gitdir가 아직 없으므로 적용 안내의 `git -c include.path=… clone …`을 사용한다.
 SSH가 아닌 HTTPS 연결의 bws는 agent를 시작하지 않는다.
 
@@ -256,6 +300,10 @@ Git·SSH Include와 shell.zsh를 읽으며, 연결 해제는 `~/.config/dotfiles
 ```sh
 python3 tests/smoke.py
 python3 tests/dashboard.py
+node tests/dashboard-ui.js
+python3 tests/ssh_system.py
+python3 tests/secret_workflow.py
+python3 tests/terminal_handoff.py
 python3 tests/runbook.py
 python3 tests/tools.py
 python3 tests/desktop.py
@@ -271,3 +319,19 @@ Git의 [조건부 include](https://git-scm.com/docs/git-config#_conditional_incl
 [credential helper](https://git-scm.com/docs/gitcredentials),
 [gh 환경변수](https://cli.github.com/manual/gh_help_environment),
 [glab 환경변수](https://docs.gitlab.com/cli/configuration/#environment-variables)가 연동의 근거다.
+
+## 서비스 인증과 개발 환경 상태
+
+선택 설치한 environment-core와 연결하면 대시보드의 **외부 서비스**에서 Jira·Confluence·Google 계정의 설정·로그인·갱신을,
+**프로젝트 실행 환경**에서 선택한 프로젝트의 Dev Container 구성·실행 상태를 확인한다.
+기존 Git·SSH·Bitwarden 설정은 유지한다. [연결·이전 안내](docs/environment-control.md)를 따른다.
+
+## UI 설계 미리보기
+
+카탈로그에서 사용한 패턴을 확인하고, 주 메뉴·보조 설명 표시의 구현된
+대안을 비교하고 목록→상세 구조의 적용 패턴을 확인할 수 있다. [UI 설계 살펴보기](docs/ui-design-inspector.md)의 미리보기 명령으로
+연다. 예시 설정을 사용하며 실제 설정 저장·인증 실행은 차단된다.
+
+Tailscale을 사용하는 원격 개발 PC는 **원격 접속 → Tailscale·집 WSL**의
+[새 클라이언트 설정](docs/tailscale-client-setup.md)을 따른다. 기존 SSH configure에도
+전용 별칭 Include가 연결되며 실제 계정 로그인과 원격 접속은 직접 확인한다.

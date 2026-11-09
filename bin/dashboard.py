@@ -17,6 +17,12 @@ import configuration as cfg
 import features
 import tool_catalog
 import runbook
+import setup_progress
+import tailscale_setup
+import host_inventory
+import secret_workflow
+import environment_control
+from environment_bridge import bridge
 
 REPO=cfg.REPO
 DATA=cfg.DATA
@@ -32,7 +38,7 @@ DOCS={'bw':'https://bitwarden.com/help/cli/','ohmyzsh':'https://github.com/ohmyz
 def plan(state):
     active=[c for c in state['connections'] if c['enabled']]
     creds={c['id']:c for c in state['credentials']}
-    references={ref for c in active for ref in ([c['credential']]+([c['api']['credential']] if c['api']['enabled'] else [])) if ref}
+    references={ref for c in active for ref in cfg.connection_refs(c) if ref}
     required={'git','bash','zsh'}
     if any(c['method']=='ssh' for c in active):required.update(('ssh','ssh-add','ssh-keygen'))
     if any(creds.get(ref,{}).get('source')=='bitwarden' for ref in references):required.add('bw')
@@ -74,7 +80,11 @@ def auth_status():
     return dict(agent=agent,vault='자동 조회 안 함',scope='이 대시보드 서버 프로세스 기준입니다. 다른 터미널의 agent·vault 상태와 다를 수 있습니다.')
 
 
-def snapshot(state=None,migrated=None,revision=None):
+def snapshot(state=None,migrated=None,revision=None,design_preview=False,catalog_url=None):
+    if state is None and design_preview:
+        state=defaults();revision='design-preview'
+        state['profiles'][0].update(name='개인 프로젝트 · 예시',path='~/personal/',author='Example',email='example@example.org')
+        state['connections']=[dict(id='example-github',name='개인 GitHub · 예시',profile=state['profiles'][0]['id'],provider='github',host='github.com',kind='git',enabled=False,method='ssh',sshUser='git',publicKey='~/.ssh/keys/example.pub',credential='',api=dict(enabled=False,tool='gh',credential='',host=''))]
     if state is None:state,migrated,revision=cfg.read_settings()
     try:files=cfg.compile(state);validation_error=''
     except (ValueError,TypeError,KeyError) as exc:files={};validation_error=str(exc)
@@ -82,7 +92,7 @@ def snapshot(state=None,migrated=None,revision=None):
     for f in definitions:
         f['installed']=features.installed(f,state['features'])
         f['dependencies']=tool_catalog.status(f['id'],state)
-    return dict(state=state,revision=revision if revision is not None else cfg.revision(),definitions=definitions,plan=plan(state),files=files,environment=platform.node()+' · '+platform.system(),data_directory=str(DATA),auth_status=auth_status(),migration_notice='기존 설정을 새 구조로 불러왔습니다. 저장 전 검토하세요. 첫 저장 시 원본 설정을 백업합니다.' if migrated else '',validation_error=validation_error)
+    return dict(state=state,revision=revision if revision is not None else cfg.revision(),host_state=host_inventory.observe(design_preview),definitions=definitions,plan=plan(state),files=files,environment='설계 미리보기 · 예시 설정' if design_preview else platform.node()+' · '+platform.system(),secret_supply_command=shlex.join(['python3',str(REPO/'bin/secret_supply.py')]),data_directory='메모리의 예시 설정 · 저장 불가' if design_preview else str(DATA),auth_status=dict(agent='미리보기 · 조회 안 함',vault='미리보기 · 조회 안 함',scope='실제 인증 상태를 조회하지 않습니다.') if design_preview else auth_status(),shared_environment=dict(availability='unavailable') if design_preview else bridge.status(),tailscale=tailscale_setup.snapshot(design_preview),tailscale_apply_command=shlex.join(["python3",str(REPO/"bin/tailscale_setup.py"),"apply-ssh"]),setup_progress=setup_progress.status(state,design_preview),design_preview=design_preview,design_catalog_url=catalog_url,migration_notice='기존 설정을 새 구조로 불러왔습니다. 저장 전 검토하세요. 첫 저장 시 원본 설정을 백업합니다.' if migrated else '',validation_error=validation_error)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -95,14 +105,123 @@ class Handler(BaseHTTPRequestHandler):
         if not self.valid_host():self.reply(403,{'error':'로컬 Host만 허용합니다.'});return
         path=urlsplit(self.path).path
         try:
-            if path=='/api/state':self.reply(200,snapshot())
-            elif path in ('/','/index.html','/app.js','/desktop.js','/style.css'):
+            if path=='/api/state':self.reply(200,snapshot(design_preview=getattr(self.server,'design_preview',False),catalog_url=getattr(self.server,'design_catalog_url',None)))
+            elif path in ('/','/index.html','/app.js','/secret-workflows.js','/control-center.js','/inventory.js','/record-picker.js','/change-center.js','/environment.js','/desktop.js','/style.css','/design/dashboard-design.js','/design/preview.js','/design/preview.css','/onboarding.js','/navigation.js','/tailscale.js','/design/design-inspector.js','/design/design-inspector.css'):
                 file=REPO/'dashboard'/('index.html' if path in ('/','/index.html') else path[1:]);self.reply(200,file.read_bytes(),{'html':'text/html','js':'application/javascript','css':'text/css'}[file.suffix[1:]]+'; charset=utf-8')
             else:self.reply(404,{'error':'찾을 수 없습니다.'})
         except (ValueError,OSError,KeyError,TypeError) as exc:self.reply(400,{'error':'설정 읽기 실패: '+str(exc)})
     def do_POST(self):
         origin='http://127.0.0.1:'+str(self.server.server_port)
         if not self.valid_host() or self.headers.get('Origin')!=origin:self.reply(403,{'error':'이 대시보드의 동일 출처 요청만 허용합니다.'});return
+        if getattr(self.server,'design_preview',False) and self.path!='/api/preview':
+            self.reply(403,{'error':'설계 미리보기에서는 설정 저장·인증 실행을 하지 않습니다.'});return
+        if self.path=='/api/control':
+            try:
+                import threading
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=8192:raise ValueError('환경 요청 크기 오류')
+                request=json.loads(self.rfile.read(size))
+                if not isinstance(request,dict):raise ValueError('환경 요청 형식 오류')
+                with secret_workflow.CREATION_LOCK:
+                    control=getattr(self.server,'environment_control',None)
+                    if control is None:
+                        def git_credentials():
+                            workflow=getattr(self.server,'secret_workflow',None)
+                            if workflow is None:return {}
+                            with workflow.lock:return workflow.github_install_environment()
+                        control=self.server.environment_control=environment_control.Control(plan,git_credentials)
+                action=request.get('action')
+                if request=={'action':'status'}:result=control.status()
+                elif set(request)=={'action','revision'} and action in ('apply','check_update','update','services','runtime'):result=control.start(action,request['revision'])
+                elif request=={'action':'restart'}:
+                    state=control.status()
+                    if state['busy'] or not state['job'] or not state['job'].get('restart_required'):raise ValueError('업데이트 완료 후 재시작할 수 있습니다.')
+                    def restart():
+                        import os,time
+                        time.sleep(.3)
+                        workflow=getattr(self.server,'secret_workflow',None)
+                        if workflow:workflow.close()
+                        bridge.close()
+                        os.execv(sys.executable,[sys.executable,*sys.argv])
+                    threading.Thread(target=restart,daemon=True).start();result={'restarting':True}
+                else:raise ValueError('지원하지 않는 환경 요청')
+                self.reply(200,result)
+            except (ValueError,OSError,TypeError,KeyError,subprocess.TimeoutExpired):self.reply(400,{'error':'환경 작업을 시작하지 못했습니다. 저장된 설정·진행 중 작업·연결을 확인하세요.'})
+            return
+        if self.path in ('/api/secrets','/api/secret-session'):
+            try:
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=16384:raise ValueError('비밀 관리 요청 크기 오류')
+                request=json.loads(self.rfile.read(size))
+                if not isinstance(request,dict):raise ValueError('비밀 관리 요청 형식 오류')
+                with secret_workflow.CREATION_LOCK:
+                    workflow=getattr(self.server,'secret_workflow',None)
+                    if workflow is None:
+                        # Status and connect are the only entry points before a broker exists.
+                        if self.path=='/api/secret-session' or request.get('action') not in ('status','connect'):raise ValueError('저장소 연결 상태를 먼저 확인하세요.')
+                        workflow=self.server.secret_workflow=secret_workflow.Workflow(origin)
+                if self.path=='/api/secret-session':
+                    if set(request)!={'ticket','session'}:raise ValueError('연결 요청 형식 오류')
+                    with workflow.lock:result=workflow.attach(request['ticket'],request['session'])
+                else:result=workflow.dispatch(request)
+                self.reply(200,result)
+            except (ValueError,RuntimeError) as exc:
+                # Domain errors are fixed messages; provider stdout/stderr is never included.
+                self.reply(400,{'error':str(exc)})
+            except (OSError,TypeError,KeyError):
+                self.reply(400,{'error':'비밀 관리 작업을 완료하지 못했습니다. 연결·선택 항목·공개키 경로를 확인하세요.'})
+            return
+        if self.path=='/api/existing-settings':
+            try:
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=16384:raise ValueError('요청 크기 오류')
+                request=json.loads(self.rfile.read(size))
+                if not isinstance(request,dict):raise ValueError('요청 형식 오류')
+                if request=={'action':'observe'}:result=host_inventory.observe()
+                elif set(request)=={'action','ids','revision'} and request['action'] in ('import','remove'):
+                    result=host_inventory.register(request['ids'],request['revision'],request['action']=='remove')
+                else:raise ValueError('지원하지 않는 기존 설정 요청')
+                self.reply(200,result)
+            except (ValueError,TypeError,KeyError,OSError):self.reply(400,{'error':'원본 또는 다른 창의 변경을 확인한 뒤 다시 감지하세요. 등록할 수 없는 설정이거나 참조 파일을 읽지 못했습니다.'})
+            return
+        if self.path=='/api/tailscale':
+            try:
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=16384:raise ValueError('요청 크기 오류')
+                request=json.loads(self.rfile.read(size))
+                if not isinstance(request,dict):raise ValueError('요청 형식 오류')
+                action=request.get('action')
+                if action=='import' and set(request)=={'action','repository','ref'}:result=tailscale_setup.import_private(request['repository'],request['ref'])
+                elif action=='save' and set(request)=={'action','target','revision','source'}:result=tailscale_setup.save(request['target'],request['revision'],request['source'])
+                elif action=='acknowledge' and set(request)=={'action','step','completed','revision'}:result=tailscale_setup.acknowledge(request['step'],request['completed'],request['revision'])
+                elif action=='observe' and set(request)=={'action'}:result=tailscale_setup.observe()
+                else:raise ValueError('지원하지 않는 Tailscale 요청')
+                self.reply(200,result)
+            except ValueError as exc:self.reply(400,{'error':str(exc)})
+            except (KeyError,TypeError,OSError,subprocess.TimeoutExpired):self.reply(400,{'error':'Tailscale 요청을 처리하지 못했습니다. 설정·출처·앞 단계·다른 창의 변경 여부를 확인하세요.'})
+            return
+        if self.path=='/api/setup-progress':
+            try:
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=262144:raise ValueError('요청 크기 오류')
+                request=json.loads(self.rfile.read(size))
+                if not isinstance(request,dict) or set(request)!={'step','completed','state'}:raise ValueError('설정 단계 요청 형식 오류')
+                result=setup_progress.record(request['step'],request['completed'],request['state'],self.headers.get('If-Match'))
+                self.reply(200,{'setup_progress':result})
+            except (ValueError,TypeError,KeyError,OSError) as exc:self.reply(400,{'error':str(exc)})
+            return
+        if self.path=='/api/environment':
+            try:
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=8192:raise ValueError('invalid_environment_request')
+                request=json.loads(self.rfile.read(size))
+                if not isinstance(request,dict) or set(request)-{'action','workspace'}:raise ValueError('invalid_environment_request')
+                if request.get('action')=='observe':result=bridge.status(request.get('workspace'))
+                elif request.get('action')=='open_services' and 'workspace' not in request:result=bridge.open_services()
+                else:raise ValueError('invalid_environment_action')
+                self.reply(200,result)
+            except (ValueError,OSError):self.reply(400,{'error':'환경 요청을 처리하지 못했습니다.'})
+            return
         if self.path not in ('/api/settings','/api/preview'):self.reply(404,{'error':'찾을 수 없습니다.'});return
         try:
             size=int(self.headers.get('Content-Length','0'))
@@ -113,12 +232,16 @@ class Handler(BaseHTTPRequestHandler):
                 if expected is None:raise ValueError('설정 버전이 없습니다. 새로고침하세요.')
                 saved_revision=cfg.generate(state,expected)
             else:saved_revision=self.headers.get('If-Match')
-            self.reply(200,snapshot(state,revision=saved_revision))
+            self.reply(200,snapshot(state,revision=saved_revision,design_preview=getattr(self.server,'design_preview',False),catalog_url=getattr(self.server,'design_catalog_url',None)))
         except (ValueError,TypeError,KeyError,OSError) as exc:self.reply(400,{'error':str(exc)})
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('action',nargs='?',default='serve',choices=['serve','configure','plan']);parser.add_argument('--port',type=int,default=0);parser.add_argument('--no-browser',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('action',nargs='?',default='serve',choices=['serve','configure','plan']);parser.add_argument('--port',type=int,default=0);parser.add_argument('--no-browser',action='store_true');parser.add_argument('--design-preview',action='store_true');parser.add_argument('--design-catalog-url');args=parser.parse_args()
+    if args.design_preview and (args.action!='serve' or not args.design_catalog_url):parser.error('--design-preview requires serve and --design-catalog-url')
+    if args.design_catalog_url:
+        parsed=urlsplit(args.design_catalog_url)
+        if parsed.scheme not in ('http','https') or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:parser.error('Use an HTTP(S) catalog URL without credentials, query or fragment')
     if args.action in ('configure','plan'):
         state,_,revision=cfg.read_settings();cfg.validate(state)
         if args.action=='configure':
@@ -126,10 +249,16 @@ def main():
         else:print(json.dumps(plan(state),ensure_ascii=False,indent=2))
         return
     server=ThreadingHTTPServer(('127.0.0.1',args.port),Handler);url='http://127.0.0.1:'+str(server.server_port)+'/'
+    server.design_preview=args.design_preview;server.design_catalog_url=args.design_catalog_url
     print(url,flush=True)
     if not args.no_browser:webbrowser.open(url)
+    import signal
+    def stop(signum,frame):raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM,stop)
     try:server.serve_forever()
     except KeyboardInterrupt:pass
-    finally:server.server_close()
+    finally:
+        if getattr(server,'secret_workflow',None):server.secret_workflow.close()
+        server.server_close();bridge.close()
 
 if __name__=='__main__':main()

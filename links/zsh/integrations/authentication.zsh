@@ -55,7 +55,7 @@ bws() {
     mode="$(python3 "$script" prepare "$@")" || return 1
   fi
   if [[ "$mode" == *-bitwarden ]]; then bwu || return 1; fi
-  if [[ "$mode" == https-* ]]; then
+  if [[ "$mode" == https-* || "$mode" == ssh-system || "$mode" == ssh-managed ]]; then
     python3 "$script" load "$@"
     return $?
   fi

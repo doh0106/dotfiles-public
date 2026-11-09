@@ -1,25 +1,130 @@
 'use strict';
 const $=id=>document.getElementById(id),all=s=>[...document.querySelectorAll(s)];
 const svg={globe:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M3 12h18M12 3c6 5 6 13 0 18-6-5-6-13 0-18Z\"/></svg>",git:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"6\" cy=\"5\" r=\"2\"/><circle cx=\"6\" cy=\"19\" r=\"2\"/><circle cx=\"18\" cy=\"6\" r=\"2\"/><path d=\"M6 7v10m0-3c0-5 12 0 12-6\"/></svg>",lock:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"5\" y=\"10\" width=\"14\" height=\"11\" rx=\"2\"/><path d=\"M8 10V6a4 4 0 0 1 8 0v4m-4 5v2\"/></svg>",key:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"5\"/><path d=\"m12 12 9 9m-5-5 3-3m-6 0 3-3\"/></svg>",code:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18\"/></svg>",help:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4m0 4h.01\"/></svg>",link:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m9 15 6-6m-7 8-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 10a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-1 1\"/></svg>",shell:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"2\" y=\"3\" width=\"20\" height=\"18\" rx=\"3\"/><path d=\"m6 8 4 4-4 4m7 0h5\"/></svg>",arrow:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14m-6-6 6 6-6 6\"/></svg>",search:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"10\" cy=\"10\" r=\"6\"/><path d=\"m15 15 5 5\"/></svg>"};
-let snapshot=null,draft=null,baseline=null,preview=null,view='connections',chosen='',group='all',search='',inspector='connection',mapOpen=false,node='host',busy=false;
-const labels={overview:'환경 개요',profiles:'작업 프로필',connections:'연결과 서비스',appearance:'셸과 테마',tools:'선택 도구',secrets:'비밀정보 보관',sessions:'키와 세션',plan:'적용 안내'};
-const providers={github:'GitHub',gitlab:'GitLab',generic:'일반 서버 / Git 서비스'},sources={bitwarden:'Bitwarden',agent:'기존 SSH agent','git-helper':'Git credential helper',environment:'환경변수'};
+let snapshot=null,draft=null,baseline=null,preview=null,view='overview',chosen='',search='',inspector='connection',mapOpen=false,node='host',busy=false;
+const labels={overview:'환경 현황',profiles:'작업 프로필',connections:'원격 저장소 접근',servers:'SSH 접속 대상',appearance:'셸과 테마',tools:'프로그램 설치',secrets:'Git · SSH 인증 참조',sessions:'SSH 키 · 인증 세션',plan:'적용 안내'};
+const providers={github:'GitHub',gitlab:'GitLab',generic:'선택 안 함 · Git 전송만'},sources={bitwarden:'Bitwarden',agent:'기존 SSH agent','git-helper':'Git credential helper',environment:'환경변수'};
 const clone=x=>structuredClone(x),current=()=>draft.connections.find(c=>c.id===chosen),profileOf=c=>draft.profiles.find(p=>p.id===c.profile),credentialOf=id=>draft.credentials.find(c=>c.id===id);
 function el(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n}
 function badge(text,cls=''){return el('span',text,'badge '+cls)}
 function toast(text){$('toast').textContent=text;$('toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').classList.remove('show'),4500)}
 function notice(text){$('notice').textContent=text||'';$('notice').hidden=!text}
 function button(text,handler,cls='btn'){const n=el('button',text,cls);n.type='button';n.onclick=handler;return n}
+function fieldContract(id){
+ const c=current(),active=Boolean(c?.enabled);let required=false,condition='',previous,origin='';
+ const map={'connection-name':'name','connection-kind':'kind','host-input':'host','protocol-select':'method','profile-select':'profile','ssh-user':'sshUser','public-key':'publicKey','ssh-alias':'sshAlias','provider-select':'provider'};
+ if(id==='vault-master')required=true;
+ if(['connection-name','connection-kind','new-connection-name','new-connection-kind','new-id','session-ttl','key-lifetime'].includes(id))required=true;
+ if(['host-input','protocol-select','ssh-user','public-key'].includes(id)){required=active&&(!['ssh-user','public-key'].includes(id)||sshMode(c)==='key');condition='사용 시 필수';}
+ if(id==='git-credential'&&c?.method==='ssh'){required=false;condition='선택';}
+ if(id==='api-credential'||id==='api-tool'){required=Boolean(c?.api.enabled);condition='API 사용 시 필수';}
+ if(id==='provider-select'&&c?.api.enabled)required=true;
+ if(c&&map[id]){const old=baseline.connections.find(item=>item.id===c.id);if(old){previous=old[map[id]];origin='저장된 연결 ‘'+old.name+'’';}}
+ if(id==='git-credential'||id==='api-credential'){const old=baseline.connections.find(item=>item.id===c?.id);if(old){previous=id==='git-credential'?old.credential:old.api.credential;origin='저장된 연결의 인증 참조';}}
+ if(id==='api-tool'){previous=c?.api.tool;origin='선택한 Git 호스팅 제품에서 결정';}
+ for(const profile of draft.profiles){
+  const prefix='profile-'+profile.id+'-';if(!id.startsWith(prefix))continue;const key=id.slice(prefix.length);
+  required=['name','path'].includes(key)||(draft.git.enabled&&profile.enabled&&['author','email'].includes(key));
+  if(['author','email'].includes(key)&&!required)condition='Git 작성자 기능 사용 시 필수';
+  const old=baseline.profiles.find(item=>item.id===profile.id);if(old){previous=old[key];origin='폴더 규칙 ‘'+old.name+'’';}
+ }
+ for(const ref of draft.credentials){
+  const keys={['source-'+ref.id]:'source',['item-'+ref.id]:'item',['kind-'+ref.id]:'kind',['username-'+ref.id]:'username',['env-'+ref.id]:'variable',['helper-'+ref.id]:'helper'};
+  const key=keys[id];if(!key)continue;
+  const used=draft.connections.some(item=>item.enabled&&(item.credential===ref.id||(item.api.enabled&&item.api.credential===ref.id)));
+  required=['source','kind','helper'].includes(key)||used&&(['item','variable'].includes(key)||key==='username'&&draft.connections.some(item=>item.enabled&&item.method==='https'&&item.credential===ref.id));
+  if(!required&&['item','variable'].includes(key))condition='인증 참조 사용 시 필수';
+  const old=baseline.credentials.find(item=>item.id===ref.id);if(old){previous=old[key];origin='저장된 인증 참조 ‘'+ref.id+'’';}
+ }
+ const feature=snapshot.definitions.find(item=>id.startsWith('tool-'+item.id+'-'));
+ if(feature){const key=id.slice(('tool-'+feature.id+'-').length);required=Boolean(draft.features[feature.id].enabled)&&!(feature.id==='zellij'&&key==='session');if(!required&&!(feature.id==='zellij'&&key==='session'))condition='도구 사용 시 필수';previous=baseline.features[feature.id].values[key];origin='저장된 도구 설정';}
+ if(['theme-select','framework-path'].includes(id)){required=Boolean(draft.features.ohmyzsh.enabled);condition='Oh My Zsh 사용 시 필수';previous=baseline.features.ohmyzsh.values[id==='theme-select'?'theme':'dir'];origin='저장된 셸 설정';}
+ if(['session-ttl','key-lifetime'].includes(id)){previous=baseline.session.keyLifetime;origin='저장된 SSH 키 유지 시간';}
+ if(id.startsWith('tailscale-')&&!id.startsWith('tailscale-private-'))required=true;
+ if(snapshot.revision==='new'&&origin.startsWith('저장된'))origin='기본 제안값';
+ return {required,condition,previous,origin};
+}
 function field(parent,label,value,options,onchange,id,type='text'){
  const wrap=el('div',undefined,'field'),l=el('label',label),input=el(options?'select':'input');input.id=id||'field-'+crypto.randomUUID();l.htmlFor=input.id;
+ const contract=fieldContract(input.id),marker=el('span',undefined,'field-marker'+(contract.required?' required':'')),note=el('small',undefined,'field-origin');
+ function annotate(){
+  const filled=String(input.value??'').trim()!=='';
+  marker.textContent=contract.required?'필수':contract.condition||'선택';
+  input.setAttribute('aria-required',String(contract.required));input.required=contract.required;
+  const changed=contract.origin&&String(contract.previous??'')!==String(input.value??'');
+  note.hidden=!changed;
+  note.replaceChildren();
+  if(changed){const details=el('details');details.append(el('summary','이전 값 확인'),el('span',contract.origin+': '+(String(contract.previous??'')||'지정 안 함')));note.append(details);}
+
+ }
+ l.append(marker);
  if(options)for(const item of options){const pair=Array.isArray(item)?item:[item,item];const option=el('option',pair[1]);option.value=pair[0];input.append(option)}else input.type=type;
- input.value=value??'';input.autocomplete='off';input.onchange=()=>onchange?.(input.value);wrap.append(l,input);parent.append(wrap);return input;
+ input.value=value??'';input.autocomplete='off';input.onchange=()=>{onchange?.(input.value);annotate()};
+ if(!options)input.addEventListener('input',()=>{onchange?.(input.value);annotate()});
+ wrap.append(l,input,note);parent.append(wrap);annotate();decorateField(input,label);return input;
 }
+
+const fieldGuides={
+ 'ssh-mode':[null,'기존 SSH 설정 사용은 OpenSSH의 설정·키·agent·대화형 인증에 맡깁니다. 지정한 키 사용을 선택할 때만 공개키 경로와 선택적인 인증정보 연동을 관리합니다.'],
+ 'connection-name':['예: 개인 GitHub','여러 저장소에서 사용할 서버 접속 설정의 이름입니다. 알아보기 쉬운 이름을 붙이세요.'],
+ 'new-connection-name':['예: 개인 GitHub','이름만 먼저 등록하고, 주소와 인증은 다음 화면에서 설정할 수 있습니다.'],
+ 'host-input':['예: github.com','저장소 전체 URL이 아닌 서버 주소입니다. git@github.com:org/project.git에서는 github.com만 입력합니다. 별도 포트는 git.company.com:2222처럼 씁니다.'],
+ 'ssh-user':['예: git','Git이 SSH로 서버에 접속할 때 사용하는 사용자입니다. GitHub·GitLab의 공식 서버에서는 git을 쓰며, 실제 계정과 권한은 SSH 키로 구분합니다. 직접 운영하는 서버는 값이 다를 수 있습니다.'],
+ 'public-key':['예: ~/.ssh/personal.pub','개인키와 짝인 공개키 파일의 경로입니다. 이 대시보드는 SSH agent에서 사용할 키를 구분하기 위해 .pub 경로를 요구합니다. 개인키 내용이나 토큰을 입력하지 마세요.'],
+ 'git-credential':[null,'실제 비밀값이 아닌 보관 위치·공급 방식의 참조입니다. SSH는 키, HTTPS는 토큰 또는 Git 인증 도구를 사용합니다. 다른 연결과 공유할 수 있습니다.'],
+ 'api-credential':[null,'PR·이슈 도구가 사용할 API 토큰의 보관 위치입니다. Git의 SSH 키나 HTTPS 인증과 별도로 사용합니다.'],
+ 'profile-select':[null,'이 폴더 아래의 저장소에서 사용할 연결을 선택하는 규칙입니다. 지정하지 않아도 연결을 직접 사용할 수 있습니다. 커밋 작성자는 별도로 켤 수 있습니다.'],
+ 'protocol-select':[null,'Git이 clone·pull·push에 사용할 방식입니다. SSH는 기존 OpenSSH 설정 또는 지정 키를 사용하며, HTTPS는 기존 인증 도구나 토큰 연동을 사용합니다. 기존 저장소의 remote URL은 자동 변경하지 않습니다.'],
+ 'ssh-alias':['예: home-server','설정을 적용한 뒤 ssh home-server처럼 사용할 이름입니다. 비워 두면 연결 ID를 사용합니다.'],
+ 'provider-select':[null,'PR·이슈 도구를 사용할 때 선택합니다. Git 저장소 접근만 필요하면 선택하지 않아도 됩니다.'],
+ 'framework-path':['예: ~/.oh-my-zsh','Oh My Zsh가 설치된 폴더입니다. 기존 설치 경로를 유지해 사용할 수 있습니다.'],
+ 'api-host':['예: github.example.com','비워 두면 접속 서버 주소를 사용합니다. API 서버가 다른 경우에만 지정합니다.'],
+ 'tailscale-private-repository':['예: ~/personal/dotfiles-private','기존 접속 대상 설정이 있는 로컬 비공개 저장소 경로입니다. 원본 설정은 수정하지 않습니다.'],
+ 'tailscale-alias':['예: home-wsl','설정 적용 후 ssh home-wsl처럼 사용할 접속 이름입니다.'],
+ 'tailscale-host':['예: home-wsl.tail-example.ts.net','집 WSL에 등록된 Tailscale DNS 이름 또는 IP입니다. 예시는 실제 접속 주소가 아닙니다.'],
+ 'tailscale-user':['예: dohyun','접속할 집 WSL에 존재하는 Linux 사용자입니다.'],
+ 'tailscale-account':['예: my-account@github','접속 대상이 속한 Tailscale 로그인 신원입니다. 비밀번호나 토큰을 입력하지 않습니다.'],
+ 'environment-workspace':['예: /Users/me/projects/my-app','Dev Container 상태를 확인할 프로젝트의 절대 경로입니다. 상태 확인만으로 컨테이너를 시작하지 않습니다.'],
+ 'new-id':['예: personal-github','설정과 명령에서 참조할 고유 식별자입니다. 표시 이름과 별개이며 영문 소문자·숫자·하이픈을 사용합니다.']
+};
+function decorateField(input,label){
+ let guide=fieldGuides[input.id];
+ if(input.id==='host-input'&&current()?.kind==='server')guide=['예: server.example.com:2222','접속할 컴퓨터의 IP 또는 DNS 이름입니다. 별도 포트가 필요하면 주소 뒤에 :2222처럼 지정합니다.'];
+ if(input.id==='ssh-user'&&current()?.kind==='server')guide=['예: dohyun','SSH로 접속할 서버에 존재하는 OS 사용자입니다. Bitwarden 계정이나 Git 커밋 작성자가 아닙니다.'];
+ if(!guide&&input.id.startsWith('profile-')){const key=input.id.split('-').pop();guide=({path:['예: ~/personal/','이 폴더 아래 저장소에 적용할 규칙입니다. 기존 remote URL 조건과는 별개의 폴더 규칙입니다.'],name:['예: 개인 프로젝트','폴더와 연결을 구분할 규칙 이름입니다.'],author:['예: 홍길동','커밋에 기록할 작성자 이름입니다. 서버 로그인 사용자와 다릅니다.'],email:['예: me@example.com','커밋에 기록할 작성자 이메일입니다. 인증 토큰이 아닙니다.']})[key];}
+ if(!guide&&input.id.startsWith('item-'))guide=['예: personal-github-key','Bitwarden에 저장한 항목의 이름 또는 ID입니다. 비밀값 자체를 입력하지 않습니다. 같은 참조를 수정하면 사용하는 모든 연결에 영향을 줍니다.'];
+ if(!guide&&input.id.startsWith('env-'))guide=['예: GITHUB_TOKEN','토큰 값이 아닌 환경변수 이름입니다.'];
+ if(!guide&&input.id.startsWith('username-'))guide=['예: x-access-token','HTTPS Git 인증에서 서버가 요구하는 사용자명입니다. 서비스의 토큰 인증 방식에 맞춰 입력하세요.'];
+ if(!guide&&input.id.startsWith('tool-')){const feature=snapshot.definitions.find(item=>input.id.startsWith('tool-'+item.id+'-'));const definition=feature?.fields.find(item=>input.id==='tool-'+feature.id+'-'+item.key);const examples={'ohmyzsh-dir':'~/.oh-my-zsh','nvm-dir':'~/.nvm','zellij-session':'my-project','colors-path':'~/projects/my-app/*'};if(definition)guide=[examples[feature.id+'-'+definition.key]?'예: '+examples[feature.id+'-'+definition.key]:null,definition.hint||feature.desc];}
+ if(!guide&&input.id.startsWith('source-'))guide=[null,'키·토큰을 어디에서 공급받을지 선택합니다. 대시보드 설정에는 실제 비밀값 대신 이 참조만 저장합니다.'];
+ if(!guide&&input.id.startsWith('kind-'))guide=[null,'Bitwarden 항목 안에서 개인키나 토큰을 읽을 위치를 지정합니다. 기존 항목의 형식과 일치해야 합니다.'];
+ if(!guide&&input.id.startsWith('helper-'))guide=[null,'Git이 HTTPS 인증정보를 조회할 도구입니다. 보관·잠금·만료 정책은 선택한 도구가 관리합니다.'];
+ if(!guide&&['key-lifetime','session-ttl'].includes(input.id))guide=['예: 3600','이 도구가 SSH agent에 새로 추가하는 키의 유지 시간(초)입니다. 기존 키의 수명이나 서버 토큰 만료 시간은 바꾸지 않습니다.'];
+ if(!guide)return;
+ if(guide[0]&&input.tagName==='INPUT')input.placeholder=guide[0];
+ const wrap=input.parentElement,help=el('details',undefined,'field-help'),summary=el('summary','?');summary.setAttribute('aria-label',label+' 도움말');
+ const text=el('p',guide[1]);text.id=input.id+'-help';help.append(summary,text);let pinned=false;help.onmouseenter=()=>{help.open=true};help.onmouseleave=()=>{if(!pinned)help.open=false};summary.onclick=e=>{e.preventDefault();pinned=!pinned;help.open=pinned};summary.onfocus=()=>{help.open=true};summary.onblur=()=>{if(!pinned)help.open=false};summary.onkeydown=e=>{if(e.key==='Escape'){pinned=false;help.open=false}};wrap.append(help);input.setAttribute('aria-describedby',text.id);
+}
+function formSection(parent,title,description){const section=el('section',undefined,'connection-section');section.append(el('h3',title));if(description)section.append(el('p',description,'section-description'));parent.append(section);return section;}
+function sshMode(c){return c?.sshMode||'key'}
+function openConnection(c){navigate(c.kind==='git'?'connections':'servers',{primary:true});chosen=c.id;inspector='connection';renderConnections();}
+function authSummary(parent,c,role='git'){
+ const system=role==='git'&&c.method==='ssh'&&sshMode(c)==='system';
+ if(system){parent.append(el('p','기존 OpenSSH 설정을 사용합니다. 공급된 키 선택과 서버 접속은 OpenSSH가 처리합니다.','field-description'));return}
+ recordChoiceField(parent,role==='api'?'API 도구 인증정보':c.method==='ssh'?'SSH 키 참조 · 선택':'HTTPS 인증정보 · 선택',role==='api'?c.api.credential:c.credential,()=>credentialRecords(c,role),value=>{if(role==='api')c.api.credential=value;else c.credential=value;mark();renderInspector()},'connection-auth-'+role,'기존 인증 방식 사용');
+ parent.append(button(c.method==='ssh'&&role==='git'?'SSH 키 공급 →':'비밀 관리 →',()=>navigate(c.method==='ssh'&&role==='git'?'key-supply':'secret-tokens',{primary:true}),'quiet'));
+}
+function knownGitSshHost(c){return c.kind==='git'&&/^(github\.com|gitlab\.com)(:\d+)?$/i.test(c.host.trim());}
+function reuseKeyPath(c,parent){
+ const paths=[...new Set(draft.connections.filter(other=>other.id!==c.id&&other.method==='ssh'&&other.credential===c.credential&&other.publicKey).map(other=>other.publicKey))];
+ if(c.credential&&!c.publicKey&&paths.length===1)parent.append(button('같은 인증 참조의 공개키 경로 가져오기: '+paths[0],()=>{updateConnection(c,'publicKey',paths[0]);renderInspector()},'quiet'));
+}
+
 function explanation(parent,title,text){const n=el('div',undefined,'explain');n.append(el('strong',title),document.createTextNode(text));parent.append(n)}
 function makeSwitch(on,handler,label){const b=button('',handler,'switch'+(on?' on':''));b.setAttribute('role','switch');b.setAttribute('aria-label',label);b.setAttribute('aria-checked',String(on));return b}
 function switchRow(parent,label,hint,on,handler){const r=el('div',undefined,'settingrow'),t=el('span',label);if(hint)t.append(el('small',hint));r.append(t,makeSwitch(on,handler,label));parent.append(r)}
 function groupBox(title,parent){const box=el('section',undefined,'group'),head=el('div',title,'group-head'),body=el('div',undefined,'card-pad');box.append(head,body);parent.append(box);return body}
-function mark(){const changes=diff(baseline,draft);$('dirty-count').textContent=changes.length;$('profile-number').textContent=draft.profiles.length;$('connection-number').textContent=draft.connections.length;preview=null;}
+function mark(){const changes=diff(baseline,draft);$('dirty-count').textContent=changes.length;for(const counter of all('[data-change-count]')){counter.textContent=changes.length;counter.hidden=!changes.length}preview=null;if(typeof refreshRecordFields==='function')refreshRecordFields();}
 function diff(before,after,prefix=''){
  if(JSON.stringify(before)===JSON.stringify(after))return[];
  if(before&&after&&typeof before==='object'&&typeof after==='object'&&!Array.isArray(before)&&!Array.isArray(after))return [...new Set([...Object.keys(before),...Object.keys(after)])].flatMap(k=>diff(before[k],after[k],prefix?prefix+'.'+k:k));
@@ -29,30 +134,40 @@ function diff(before,after,prefix=''){
  return[{path:prefix,before,after}];
 }
 async function api(path,body){const options=body?{method:'POST',headers:{'Content-Type':'application/json','If-Match':snapshot.revision},body:JSON.stringify(body)}:{};const response=await fetch(path,options);const data=await response.json();if(!response.ok)throw Error(data.error||'설정 요청 실패');return data}
-function inspectorShell(){return '<aside class="inspector"><div class="inspector-head"><div class="caption" id="inspector-caption">CONNECTION INSPECTOR</div><h2 id="inspector-title"></h2><p id="inspector-subtitle"></p></div><div class="inspect-tabs" id="inspect-tabs"></div><div class="inspect-body" id="inspect-body"></div><div class="inspectorfoot">초안을 편집합니다. 검토 후 저장하면 파일을 생성합니다.</div></aside>'}
-function navigate(next){if(!draft)return;view=next;all('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));$('mobile-nav').value=view;$('breadcrumb').textContent=labels[view];$('page-title').textContent=labels[view];$('overline').textContent='CONFIGURATION / '+view.toUpperCase();$('heading-action').hidden=!['connections','profiles','secrets'].includes(view);$('heading-action').textContent=({connections:'+ 연결 추가',profiles:'+ 프로필 추가',secrets:'+ 인증 참조 추가'})[view]||'';$('page-intro').textContent=({connections:'프로필마다 어디에, 어떻게 접속하는지 관리합니다. 관계가 헷갈릴 때만 맵을 펼쳐보세요.',profiles:'폴더는 설정 범위를 고르고, 커밋 이름·이메일은 Git 기록에 남습니다. 서비스 로그인은 연결에서 선택합니다.',appearance:'터미널에서 먼저 만나는 셸과 테마입니다. 계정이나 원격 접속 설정 없이 사용할 수 있습니다.',tools:'설치와 활성화는 별개입니다. 이미 설치된 도구는 설정만 연결합니다.',secrets:'키·토큰의 값 대신 공급자와 항목 이름을 연결합니다. 개인키·토큰을 이 화면에 붙여넣지 마세요.',sessions:'새 SSH 키의 TTL과 명시적인 세션 정리를 관리합니다. 토큰의 서버 만료는 서비스에서 관리합니다.',overview:'실행 환경부터 작업 신원, 원격 접속, 인증까지 역할별로 관리합니다.',plan:'설정 → 미설치 도구 준비 → configure → 새 셸 → 인증 → 작업 순서입니다.'})[view];({connections:renderConnections,profiles:renderProfiles,appearance:renderAppearance,tools:renderTools,secrets:renderSecrets,sessions:renderSessions,overview:renderOverview,plan:renderPlan})[view]();mark()}
-function filtered(){return draft.connections.filter(c=>(group==='all'||c.profile===group)&&(c.name+' '+c.host+' '+c.provider).toLowerCase().includes(search.toLowerCase()))}
+function inspectorShell(){return '<aside class="inspector"><div class="inspector-head"><div class="caption" id="inspector-caption">연결 상세</div><h2 id="inspector-title"></h2><p id="inspector-subtitle"></p></div><div class="inspect-tabs" id="inspect-tabs"></div><div class="inspect-body" id="inspect-body"></div><div class="inspectorfoot">초안을 편집합니다. 검토 후 저장하면 파일을 생성합니다.</div></aside>'}
+function connectionKind(){return view==='servers'?'server':'git'}
+function connectionView(){return ['connections','servers'].includes(view)}
+function filtered(){return draft.connections.filter(c=>c.kind===connectionKind()).filter(c=>(c.name+' '+c.host+' '+c.kind).toLowerCase().includes(search.toLowerCase()))}
 function renderConnections(){
- if(!draft.connections.some(c=>c.id===chosen))chosen=draft.connections[0]?.id||'';
- $('page-body').innerHTML='<div class="tabs" id="profile-tabs"></div><div class="layout"><section class="primary-column"><div class="tools between"><label class="search">'+svg.search+'<input type="text" id="connection-search" aria-label="연결 검색" placeholder="연결·호스트 검색…"></label><button class="btn" id="map-toggle" aria-expanded="'+mapOpen+'">'+svg.link+' <span>'+(mapOpen?'연결 관계 접기':'연결 관계 보기')+'</span></button></div><div class="tablebox"><table><thead><tr><th>연결</th><th>프로필</th><th>접속</th><th>상태</th></tr></thead><tbody id="connection-rows"></tbody></table></div><div class="note">'+svg.help+'목록에서 선택한 연결의 설정과 맵이 함께 바뀝니다.</div><section class="map-panel" id="map-panel" hidden></section><div class="session-strip"><span class="point"></span><span>값 대신 인증정보 참조</span><span>Git 통신과 API 인증 분리</span></div></section>'+inspectorShell()+'</div>';
- for(const [id,label] of [['all','모든 연결'],...draft.profiles.map(p=>[p.id,p.name])]){const b=button(label,()=>{group=id;chosen=filtered()[0]?.id||'';renderConnections()},group===id?'active':'');b.append(badge(String(draft.connections.filter(c=>id==='all'||c.profile===id).length)));$('profile-tabs').append(b)}
- $('connection-search').value=search;$('connection-search').oninput=e=>{search=e.target.value;renderRows()};$('map-toggle').disabled=!current();$('map-toggle').onclick=()=>{mapOpen=!mapOpen;renderConnections()};renderRows();renderInspector();renderMap();
+ const root=$('page-body');root.replaceChildren();
+ if(view==='servers'&&snapshot.tailscale?.target){const target=groupBox('Tailscale 접속 대상',root);target.append(el('p',snapshot.tailscale.target.alias+' · 전용 접속 설정에 등록됨 · 현재 접속 미검증','tool-state'),button('Tailscale·집 WSL 설정 열기 →',()=>navigate('tailscale')));}
+ if(chosen&&(!current()||current().kind!==connectionKind()))chosen='';
+ if(!chosen){
+  if(!draft.connections.some(c=>c.kind===connectionKind())){const empty=el('section',undefined,'connection-empty');empty.append(el('h2',view==='servers'?'직접 추가한 SSH 대상이 없습니다.':'직접 추가한 Git 연결이 없습니다.'),el('p',view==='servers'?'터미널로 접속할 컴퓨터의 주소·사용자·키 인증을 등록하세요. Tailscale로 집 WSL에 접속한다면 위의 Tailscale 안내를 따르세요.':'clone·pull·push에 사용할 Git 호스트를 추가하세요. 폴더별 작성자 설정 없이도 시작할 수 있습니다.','tool-state'),button('첫 연결 추가',addItem,'btn primary'));root.append(empty);return;}
+  const top=el('div',undefined,'tools between');const input=field(top,'연결 검색',search,null,null,'connection-search');input.placeholder='이름·호스트 검색';input.oninput=()=>{search=input.value;renderRows()};root.append(top);
+  const table=el('table');table.innerHTML='<thead><tr><th>연결</th><th>접속 대상</th><th>방식</th><th>상태</th></tr></thead><tbody id="connection-rows"></tbody>';
+  const wrapper=el('div',undefined,'tablebox');wrapper.append(table);root.append(wrapper,el('p','연결을 선택하면 상세 설정으로 이동합니다.','hint'));renderRows();return;
+ }
+ const back=button('← 연결 목록',()=>{chosen='';renderConnections()},'quiet');root.append(back);
+ const section=el('section',undefined,'connection-detail');section.innerHTML=inspectorShell();root.append(section);renderInspector();
 }
-function renderRows(){const rows=$('connection-rows');rows.replaceChildren();for(const c of filtered()){const tr=el('tr',undefined,c.id===chosen?'selected':'');tr.tabIndex=0;tr.setAttribute('aria-selected',String(c.id===chosen));const first=el('td'),line=el('div');line.append(el('span',c.provider==='github'?'GH':c.provider==='gitlab'?'GL':'SV','service'),el('span',c.name,'name'));first.append(line,el('span',c.host,'host'));tr.append(first);for(const value of [profileOf(c)?.name||c.profile,c.method.toUpperCase(),!c.enabled?'사용 안 함':'설정됨 · 인증 미검증']){const td=el('td');td.append(badge(value));tr.append(td)}tr.onclick=()=>{chosen=c.id;inspector='connection';node='host';renderRows();renderInspector();renderMap()};tr.onkeydown=e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();tr.click()}};rows.append(tr)}if(!rows.children.length){const tr=el('tr'),td=el('td',draft.connections.length?'검색 조건에 맞는 연결이 없습니다.':'연결이 아직 없습니다. 필요한 서비스만 추가해 시작하세요.','empty');td.colSpan=4;tr.append(td);rows.append(tr)}}
-function updateConnection(c,key,value){c[key]=value;mark();renderRows();renderMap();if($('inspector-subtitle'))$('inspector-subtitle').textContent=c.host}
+function renderRows(){
+ const rows=$('connection-rows');if(!rows)return;rows.replaceChildren();
+ for(const c of filtered()){
+  const tr=el('tr');tr.tabIndex=0;tr.setAttribute('aria-label',c.name+' 상세 설정');
+  const first=el('td');first.append(el('strong',c.name),el('small',c.kind==='git'?'Git 저장소':'SSH 서버','host'));tr.append(first,el('td',c.host||'호스트 미입력'),el('td',c.method==='ssh'?'SSH · '+(sshMode(c)==='system'?'기존 설정':'키 지정'):'HTTPS'),el('td',c.enabled?'사용 · 인증 미검증':'사용 안 함'));
+  tr.onclick=()=>{chosen=c.id;inspector='connection';renderConnections()};tr.onkeydown=event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();tr.click()}};rows.append(tr);
+ }
+ if(!rows.children.length){const td=el('td','검색 조건에 맞는 연결이 없습니다.','empty');td.colSpan=4;const tr=el('tr');tr.append(td);rows.append(tr);}
+}
+function updateConnection(c,key,value){c[key]=value;mark();renderRows();renderMap();if($('inspector-title'))$('inspector-title').textContent=c.name;if($('inspector-subtitle'))$('inspector-subtitle').textContent=c.host}
 function compatible(source,role,c){return role==='api'?['bitwarden','environment'].includes(source):c.method==='ssh'?['bitwarden','agent'].includes(source):['bitwarden','git-helper'].includes(source)}
-function credentialEditor(parent,c,role){
- const get=()=>role==='api'?c.api.credential:c.credential,set=v=>{if(role==='api')c.api.credential=v;else c.credential=v;mark();renderInspector();renderMap()};
- const options=[['',role==='git'&&c.method==='https'?'인증 없음 · 공개 읽기':'인증 참조 선택'],...draft.credentials.filter(x=>compatible(x.source,role,c)||x.id===get()).map(x=>[x.id,x.id+' · '+sources[x.source]])];
- field(parent,role==='api'?'API 인증 참조':'Git / SSH 인증 참조',get(),options,set,role+'-credential');parent.append(button('+ 새 인증 참조',()=>newCredential(c,role),'quiet'));
- const ref=credentialOf(get());if(ref){const details=el('details',undefined,'credential-details');details.open=ref.source==='bitwarden'&&!ref.item;details.append(el('summary',sources[ref.source]+' · 참조 설정 편집'));const line=el('div');line.style.marginTop='18px';credentialFields(line,ref,role==='api'?['bitwarden','environment']:c.method==='ssh'?['bitwarden','agent']:['bitwarden','git-helper'],()=>{mark();renderMap()},role==='git'&&c.method==='ssh');details.append(line);parent.append(details)}
-}
 function credentialFields(parent,ref,allowed,onchange,ssh=false){
- field(parent,'인증정보 공급자',ref.source,allowed.map(v=>[v,sources[v]]),v=>{ref.source=v;if(!ssh&&ref.kind==='sshkey')ref.kind='note';onchange();if(view==='connections')renderInspector();else renderSecrets()},'source-'+ref.id);
+ field(parent,'보관 위치·기존 인증 도구',ref.source,allowed.map(v=>[v,sources[v]]),v=>{ref.source=v;if(ssh===false&&ref.kind==='sshkey')ref.kind='note';onchange();if(connectionView())renderInspector();else renderSecretFlow()},'source-'+ref.id);
  if(ref.source==='bitwarden'){
   field(parent,'Bitwarden 항목 이름 / ID · 비밀값 아님',ref.item,null,v=>{ref.item=v;onchange()},'item-'+ref.id);
-  field(parent,'Bitwarden 항목 형식',ref.kind,(ssh?['note','sshkey']:['note','login']).map(v=>[v,{note:'Secure note의 본문',sshkey:'SSH Key의 개인키',login:'Login의 password'}[v]]),v=>{ref.kind=v;onchange()},'kind-'+ref.id);
-  if(!ssh)field(parent,'HTTPS Git 사용자명 · API에서는 사용 안 함',ref.username,null,v=>{ref.username=v;onchange()},'username-'+ref.id);
+  field(parent,'Bitwarden 항목 형식',ref.kind,(ssh===null?['note','sshkey','login']:ssh?['note','sshkey']:['note','login']).map(v=>[v,{note:'Secure note의 본문',sshkey:'SSH Key의 개인키',login:'Login의 password'}[v]]),v=>{ref.kind=v;onchange()},'kind-'+ref.id);
+  if(!ssh&&ref.purpose!=='password')field(parent,'HTTPS Git 사용자명 · API에서는 사용 안 함',ref.username,null,v=>{ref.username=v;onchange()},'username-'+ref.id);
  }else if(ref.source==='environment')field(parent,'토큰 환경변수 이름 · 값 아님',ref.variable,null,v=>{ref.variable=v;onchange()},'env-'+ref.id);
  else if(ref.source==='git-helper'){
   field(parent,'외부 Git helper',ref.helper,[['cache','cache · Git 메모리 캐시'],['manager','Git Credential Manager'],['osxkeychain','macOS Keychain'],['libsecret','Linux libsecret']],v=>{ref.helper=v;onchange()},'helper-'+ref.id);
@@ -60,30 +175,54 @@ function credentialFields(parent,ref,allowed,onchange,ssh=false){
  }else explanation(parent,'기존 agent를 사용','이 대시보드에서는 키를 가져오지 않습니다. 선택한 공개키에 대응하는 키를 기존 agent에 준비해야 합니다.');
 }
 function renderInspector(){
- const c=current(),body=$('inspect-body');body.replaceChildren();if(!c){$('inspector-title').textContent='연결을 추가하세요';$('inspector-subtitle').textContent='필요한 기능만 활성화합니다.';$('inspect-tabs').replaceChildren();return}
- $('inspector-title').textContent=c.name;$('inspector-subtitle').textContent=c.host;$('inspect-tabs').replaceChildren();for(const [id,name] of [['connection','연결'],['api','API'],['lifetime','세션'],['files','파일']])$('inspect-tabs').append(button(name,()=>{inspector=id;node=id==='api'?'api':id==='lifetime'?'store':'host';renderInspector();renderMap()},inspector===id?'active':''));
- if(inspector==='files'){renderFiles(body);return}
+ const c=current(),body=$('inspect-body');if(!body)return;body.replaceChildren();if(!c){$('inspector-title').textContent='연결을 추가하세요';$('inspector-subtitle').textContent='필요한 기능만 활성화합니다.';$('inspect-tabs').replaceChildren();return}
+ $('inspector-title').textContent=c.name;$('inspector-subtitle').textContent=c.host;$('inspect-tabs').replaceChildren();for(const [id,name] of [['connection','접속 설정'],...(c.kind==='git'?[['api','PR·이슈 도구 · 선택']]:[]),['advanced','고급']])$('inspect-tabs').append(button(name,()=>{inspector=id;node=id==='api'?'api':id==='lifetime'?'store':'host';renderInspector();renderMap()},inspector===id?'active':''));
+ if(inspector==='advanced'||inspector==='files'){renderConnectionAdvanced(body,c);return}
  if(inspector==='api'){
+  field(body,'Git 호스팅 제품',c.provider,Object.entries(providers),value=>{c.provider=value;c.api.tool=({github:'gh',gitlab:'glab'})[value]||'none';if(value==='generic')c.api.enabled=false;mark();renderInspector()},'provider-select');
+  explanation(body,'추가 기능을 사용할 때만 선택','기본 Git 전송에는 제품을 고를 필요가 없습니다. PR·MR·이슈 등의 API 도구를 사용할 때만 GitHub 또는 GitLab을 선택하세요.');
   const supported=c.kind==='git'&&c.provider!=='generic';switchRow(body,'API 도구 사용','PR·MR·이슈 등 서비스 기능. Git 전송 방식과 독립적입니다.',c.api.enabled,()=>{if(!supported){toast('이 서비스는 현재 API 도구 어댑터가 없습니다. Git SSH/HTTPS는 사용할 수 있습니다.');return}c.api.enabled=!c.api.enabled;c.api.tool=c.provider==='gitlab'?'glab':'gh';mark();renderInspector();renderMap()});
   if(!supported){explanation(body,'현재 API 지원 범위','GitHub/Enterprise는 gh, GitLab/self-managed는 glab를 지원합니다. 일반 Git 호스트는 Git 통신만 지원합니다.');return}
-  field(body,'서비스 API 도구',c.api.tool,null,null,'api-tool').readOnly=true;field(body,'API 서비스 호스트 · 비우면 연결 호스트',c.api.host||'',null,v=>{c.api.host=v;mark();renderMap()},'api-host');credentialEditor(body,c,'api');explanation(body,'명령마다 별도 토큰 주입','토큰은 해당 gh/glab 자식 프로세스에 전달합니다. auth login이나 Git credential 설정을 대신 실행하지 않습니다.');return;
+  field(body,'GitHub · GitLab API 도구',c.api.tool,null,null,'api-tool').readOnly=true;field(body,'GitHub · GitLab API 호스트 · 비우면 연결 호스트',c.api.host||'',null,v=>{c.api.host=v;mark();renderMap()},'api-host');authSummary(body,c,'api');explanation(body,'명령마다 별도 토큰 주입','토큰은 해당 gh/glab 자식 프로세스에 전달합니다. auth login이나 Git credential 설정을 대신 실행하지 않습니다.');return;
  }
- if(inspector==='lifetime'){
-  if(c.method==='ssh'){field(body,'새 SSH 키의 수명 · 초 (모든 연결 공통)',draft.session.keyLifetime,null,v=>{draft.session.keyLifetime=Number(v);mark()},'key-lifetime','number');explanation(body,'재사용한 키의 TTL은 유지','새로 로드하는 키만 이 수명으로 제한합니다. 기존 agent의 키는 바꾸지 않습니다.');}
-  else explanation(body,'HTTPS 자격증명의 사용 범위',credentialOf(c.credential)?.source==='git-helper'?'외부 helper 정책을 따릅니다. 이 화면의 SSH TTL이 적용되지 않습니다.':'Bitwarden 토큰은 요청 시 Git helper 파이프로만 전달하며 저장 요청은 무시합니다. SSH 키 TTL이 적용되지 않습니다.');
-  explanation(body,'작업 후 bwe','이 셸이 추가한 키를 제거하고, 사용한 vault를 잠그며 알려진 인증 환경변수를 해제합니다. 서버 측 토큰 폐기·다른 터미널·외부 credential 저장소는 별도입니다.');return;
+ switchRow(body,'이 연결 사용','켜면 검토·저장 시 설정 파일에 포함합니다. 접속 성공 여부와는 별개입니다.',c.enabled,()=>{c.enabled=!c.enabled;mark();renderInspector();renderRows();renderMap()});
+ const target=formSection(body,c.kind==='git'?'접속할 Git 서버':'접속할 서버',c.kind==='git'?'서버 접속 설정 하나를 등록합니다. 특정 프로젝트 저장소를 만드는 화면이 아닙니다.':null);
+ field(target,'연결 이름',c.name,null,value=>updateConnection(c,'name',value),'connection-name');
+ const host=field(target,c.kind==='git'?'Git 서버 주소':'서버 주소',c.host,null,value=>updateConnection(c,'host',value),'host-input');
+ const suggestUser=()=>{if(c.method==='ssh'&&sshMode(c)==='key'&&knownGitSshHost(c)&&!c.sshUser){updateConnection(c,'sshUser','git');const input=$('ssh-user');if(input){input.value='git';input.dispatchEvent(new Event('input'));}toast('공식 Git 서버의 SSH 사용자 git을 제안했습니다.')}};
+ host.addEventListener('input',suggestUser);host.addEventListener('blur',suggestUser);
+ host.parentElement.append(el('p',c.kind==='git'?c.method==='ssh'&&sshMode(c)==='system'?'기존 SSH 별칭 또는 서버 주소를 입력하세요. 예: github-personal':'저장소 URL이 아닌 서버 주소를 입력하세요. 예: github.com':'접속할 컴퓨터의 IP 또는 DNS 이름을 입력하세요.','field-description'));
+ const auth=formSection(body,'접속 방식과 인증','SSH는 기존 설정에 맡기는 것을 기본으로 합니다. 키·토큰의 보관 위치와 공급은 비밀 관리에서 별도로 설정합니다.');
+ if(c.kind==='git')field(auth,'Git 접속 방식',c.method,[['ssh','SSH · 기존 설정 또는 키 지정'],['https','HTTPS · 공개 읽기 또는 인증']],value=>{c.method=value;mark();renderInspector()},'protocol-select');
+ if(c.method==='ssh'){
+  field(auth,'SSH 인증 방식',sshMode(c),[['system','기존 SSH 설정 사용 · 기본'],['key','지정한 SSH 키 사용']],value=>{c.sshMode=value;mark();renderInspector()},'ssh-mode');
+  if(sshMode(c)==='system'){
+   explanation(auth,'기존 SSH 설정을 그대로 사용합니다.','서버 주소에는 ~/.ssh/config의 Host 별칭도 입력할 수 있습니다. 사용자·키·비밀번호 입력 등은 기존 OpenSSH 설정과 인증 절차를 따릅니다. 대시보드는 SSH 파일이나 인증정보를 덮어쓰지 않습니다.');
+   authSummary(auth,c);
+   if(c.credential||c.publicKey)auth.append(el('p','이전에 지정한 키·인증정보는 보존되어 있습니다. 현재 방식에서는 사용하지 않으며 지정 키 방식으로 돌아가면 다시 사용할 수 있습니다.','hint'));
+  }else{
+   const user=field(auth,'SSH 접속 사용자',c.sshUser,null,value=>updateConnection(c,'sshUser',value),'ssh-user');
+   const hint=el('p',c.kind==='git'?'GitHub·GitLab 공식 서버는 git을 사용합니다. 커밋 작성자·GitHub 아이디와 다릅니다.':'접속할 서버의 OS 계정입니다.','field-description');hint.id='ssh-user-description';user.parentElement.append(hint);user.setAttribute('aria-describedby','ssh-user-description ssh-user-help');
+   if(knownGitSshHost(c)&&!c.sshUser)user.parentElement.append(button('공식 서버 기본값 git 사용',()=>{updateConnection(c,'sshUser','git');renderInspector()},'quiet'));
+   if(c.kind==='server')field(auth,'SSH 접속 별칭',c.sshAlias||'',null,value=>updateConnection(c,'sshAlias',value),'ssh-alias');
+   const key=field(auth,'공개키 파일 경로 · .pub',c.publicKey,null,value=>updateConnection(c,'publicKey',value),'public-key');
+   key.parentElement.append(el('p','사용할 키를 구분합니다. 개인키의 보관 위치와 공급은 비밀 관리에서 별도로 설정합니다.','field-description'));
+   const reuse=el('div');auth.append(reuse);const showReuse=()=>{reuse.replaceChildren();reuseKeyPath(c,reuse)};showReuse();key.addEventListener('input',showReuse);
+   authSummary(auth,c);
+  }
+ }else authSummary(auth,c);
+ if(c.kind==='git'){
+ const scope=el('section',undefined,'connection-scope');scope.append(el('h3','폴더별 자동 적용 · 선택 사항'));
+ recordChoiceField(scope,'자동 적용할 폴더 규칙',c.profile,profileRecords,value=>{updateConnection(c,'profile',value);renderInspector()},'profile-select','지정하지 않음 · 연결을 직접 선택');
+ if(c.profile){const profile=profileOf(c);scope.append(el('p','적용할 폴더: '+(profile?.path||'')+' · 규칙: '+(profile?.name||c.profile)+(draft.git.enabled?' · 작성자 '+(profile?.author||'미입력')+' / '+(profile?.email||'미입력'):''),'hint'));}
+ else scope.append(el('p',c.method==='ssh'&&sshMode(c)==='system'?'기존 SSH 설정으로 접속합니다. 폴더 규칙은 필요한 경우에만 지정하세요.':'폴더를 지정하지 않아도 사용할 수 있습니다. 인증 준비는 --connection '+c.id+'로 직접 선택하며 Git은 적용 안내의 연결별 명령을 사용합니다.','hint'));
+ scope.append(button('폴더·작성자 규칙 설정 →',()=>navigate('profiles')),el('p','Git 설정 → 커밋 작성자·적용 규칙에서 폴더를 만들고 이 연결을 지정할 수 있습니다. 저장·적용 후 해당 폴더의 저장소에서 자동 선택합니다.','hint'));
+ body.append(scope);
+ }else {
+  explanation(body,'터미널에서 접속',sshMode(c)==='system'?'기존 별칭 또는 주소로 ssh '+(c.host||'HOST')+'를 실행합니다. 이 연결 이름은 대시보드 표시용이며 새 SSH 별칭을 생성하지 않습니다.':'설정을 저장·적용한 뒤 ssh '+(c.sshAlias||c.id)+'로 접속합니다.');
+  if(c.profile)body.append(el('p','기존 분류: '+(profileOf(c)?.name||c.profile)+' · 저장된 분류는 유지하며 SSH 로그인에는 영향을 주지 않습니다.','hint'));
+  body.append(el('p','연결 ID: '+c.id,'hint'));
  }
- switchRow(body,'이 연결 사용','저장 후 설정 파일에 반영합니다.',c.enabled,()=>{c.enabled=!c.enabled;mark();renderInspector();renderRows();renderMap()});
- const extra=el('details',undefined,'connection-extra');extra.append(el('summary','이름 · 연결 종류 · SSH 사용자명'));const extraBody=el('div');extraBody.style.marginTop='18px';extra.append(extraBody);
- if(c.kind==='server')field(extraBody,'SSH 별칭 · 비우면 연결 ID',c.sshAlias||'',null,v=>{c.sshAlias=v;mark()},'ssh-alias');
- field(extraBody,'연결 이름',c.name,null,v=>{updateConnection(c,'name',v);$('inspector-title').textContent=v},'connection-name');
- field(body,'작업 프로필',c.profile,draft.profiles.map(p=>[p.id,p.name]),v=>{updateConnection(c,'profile',v);renderConnections()},'profile-select');
- field(extraBody,'연결 종류',c.kind,[['git','Git 저장소 서비스'],['server','일반 SSH 서버']],v=>{c.kind=v;if(v==='server'){c.provider='generic';c.method='ssh';c.api.enabled=false;c.api.tool='none'}mark();renderInspector();renderRows();renderMap()},'connection-kind');
- field(body,'서비스 제품',c.provider,Object.entries(providers),v=>{const was=c.provider;c.provider=v;if(c.host===({github:'github.com',gitlab:'gitlab.com'})[was])c.host=({github:'github.com',gitlab:'gitlab.com'})[v]||c.host;c.api.tool=({github:'gh',gitlab:'glab'})[v]||'none';if(v==='generic')c.api.enabled=false;mark();renderInspector();renderRows();renderMap()},'provider-select').disabled=c.kind==='server';
- field(body,'호스트 · 필요 시 :포트',c.host,null,v=>updateConnection(c,'host',v),'host-input');
- field(body,c.kind==='git'?'Git 통신 방식':'서버 접속 방식',c.method,[['ssh','SSH'],['https','HTTPS']],v=>{c.method=v;c.credential='';mark();renderInspector();renderRows();renderMap()},'protocol-select').disabled=c.kind==='server';
- if(c.method==='ssh'){field(extraBody,'SSH 사용자명',c.sshUser,null,v=>updateConnection(c,'sshUser',v),'ssh-user');field(body,'공개키 파일 경로 · .pub',c.publicKey,null,v=>updateConnection(c,'publicKey',v),'public-key');}
- credentialEditor(body,c,'git');body.append(extra);explanation(body,'인증과 커밋 신원은 별개','폴더의 gitdir는 커밋 작성자를 고르고, 연결의 호스트와 통신 방식은 접속에 사용할 인증 경로를 고릅니다. 기존 remote URL은 자동으로 바꾸지 않습니다.');
  body.append(button('연결 삭제',()=>{draft.connections=draft.connections.filter(x=>x.id!==c.id);chosen='';mark();renderConnections()},'quiet danger'));
 }
 function renderMap(){const panel=$('map-panel');if(!panel)return;panel.hidden=!mapOpen;if(!mapOpen)return;const c=current();if(!c){panel.hidden=true;return}const p=profileOf(c);panel.innerHTML='<header class="mapbar between"><div><span class="eyebrow">CONNECTION MAP</span><strong id="map-heading"></strong></div><button class="quiet" id="map-close" aria-label="연결 관계 접기">접기 ↑</button></header><div class="map-scroll"><div class="map-canvas"><svg class="edges" viewBox="0 0 1000 387" preserveAspectRatio="none"><defs><marker id="edge-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#7794b3"/></marker></defs><path d="M250 151H340M570 151H613Q640 151 640 105V90H690M570 151H610Q640 151 640 185V276H690" fill="none" stroke="#718ca9" stroke-width="1" marker-end="url(#edge-arrow)"/><path d="M570 317H615Q650 317 650 300V292H690M570 317H590Q610 317 610 280V203Q610 183 640 183H820V139" fill="none" stroke="#7da997" stroke-width="1" stroke-dasharray="4 5" marker-end="url(#edge-arrow)"/></svg><div class="lane git-lane">REPOSITORY ACCESS</div><div class="lane api-lane">SERVICE OPERATIONS</div><button class="node profile-node" data-node="profile"><div class="kind">작업 프로필</div><strong id="map-profile"></strong><small id="map-path" class="mono"></small></button><button class="node host-node" data-node="host"><div class="kind">접속 대상</div><strong id="map-host-title"></strong><small id="map-host" class="mono"></small></button><button class="node git-node" data-node="git"><div class="kind">Git 통신</div><strong id="map-git"></strong><small>clone / pull / push</small></button><button class="node api-node" data-node="api"><div class="kind">API 작업</div><strong id="map-api"></strong><small id="map-api-sub"></small></button><button class="node store-node" data-node="store"><div class="kind">비밀정보 공급</div><strong id="map-store"></strong><small>비밀값 대신 참조로 연결</small></button></div></div><div class="map-description"><span id="map-explanation"></span><div class="legend"><span><i></i>설정·접속 관계</span><span><i class="dashed"></i>인증정보 공급</span></div></div>';
@@ -96,10 +235,10 @@ function renderMap(){const panel=$('map-panel');if(!panel)return;panel.hidden=!m
 let previewFont='ui-monospace',previewSize=13;
 function renderAppearance(){
  const appearance=draft.features.ohmyzsh;
- $('page-body').innerHTML='<div class="layout"><section class="primary-column"><div class="group"><div class="group-head">실행 환경</div><div class="settingrow"><span>명령을 해석할 셸<small>현재 셸 integration은 zsh를 지원합니다. 터미널 앱·기본 로그인 셸은 변경하지 않습니다.</small></span><span class="badge">zsh</span></div><div class="settingrow"><span>Oh My Zsh<small>설치된 프레임워크의 테마와 git 플러그인 사용</small></span><span id="framework-toggle"></span></div></div><div class="group"><div class="group-head between"><span>테마 미리보기</span><span class="muted">APPEARANCE</span></div><div class="themes" id="theme-choices"></div><p class="theme-caption">선택한 테마는 저장 후 새 zsh에서 읽습니다.</p></div><div class="group"><div class="group-head between"><span>선택한 환경의 모습</span><span class="badge" id="terminal-label"></span></div><div class="terminal"><div class="terminal-head between"><span>● ● ● &nbsp; personal / project</span><span>VISUAL PREVIEW</span></div><div class="terminal-body" id="terminal-live"></div></div><p class="panel-note">설치된 글꼴과 테마 버전에 따라 실제 모습은 달라질 수 있습니다.</p></div></section>'+inspectorShell()+'</div>';
- $('framework-toggle').append(makeSwitch(appearance.enabled,()=>{appearance.enabled=!appearance.enabled;mark();renderAppearance()},'Oh My Zsh 사용'));
+ $('page-body').innerHTML='<div class="layout"><section class="primary-column"><div class="group"><div class="group-head">실행 환경</div><div class="settingrow"><span>명령을 해석할 셸<small>현재 셸 integration은 zsh를 지원합니다. 터미널 앱·기본 로그인 셸은 변경하지 않습니다.</small></span><span class="badge">zsh</span></div><div class="settingrow"><span>Oh My Zsh<small>설치된 프레임워크의 테마와 git 플러그인 사용</small></span><span id="framework-toggle"></span></div></div><div class="group"><div class="group-head between"><span>테마 미리보기</span><span class="muted">APPEARANCE</span></div><div class="themes" id="theme-choices"></div><p class="theme-caption">선택한 테마는 저장 후 새 zsh에서 읽습니다.</p></div><div class="group"><div class="group-head between"><span>직접 관리 초안 미리보기</span><span class="badge" id="terminal-label"></span></div><div class="terminal"><div class="terminal-head between"><span>● ● ● &nbsp; personal / project</span><span>VISUAL PREVIEW</span></div><div class="terminal-body" id="terminal-live"></div></div><p class="panel-note">설치된 글꼴과 테마 버전에 따라 실제 모습은 달라질 수 있습니다.</p></div></section>'+inspectorShell()+'</div>';
+ $('framework-toggle').append(makeSwitch(appearance.enabled,()=>{appearance.enabled=!appearance.enabled;mark();renderAppearance()},'Oh My Zsh 직접 관리'));
  for(const [theme,tone,prompt] of [['robbyrussell','','➜ projects git:(main)'],['agnoster','warm','dev / ~/projects /'],['minimal','light','~/projects $']]){const b=button('',()=>{appearance.values.theme=theme;mark();renderAppearance()},'theme-choice'+(appearance.values.theme===theme?' selected':''));b.dataset.theme=theme;b.disabled=!appearance.enabled;b.setAttribute('aria-pressed',String(appearance.values.theme===theme));const sample=el('div',undefined,'theme-preview '+tone),dots=el('div',undefined,'theme-dots');dots.append(el('i'),el('i'),el('i'));sample.append(dots,document.createTextNode(prompt),el('br'),document.createTextNode('$ echo hello'));const name=el('span',theme);name.append(el('i',undefined,'radio'));b.append(sample,name);$('theme-choices').append(b)}
- $('inspector-caption').textContent='APPEARANCE INSPECTOR';$('inspector-title').textContent='셸과 테마';$('inspector-subtitle').textContent='셸 기능과 터미널 앱 설정을 구분합니다.';$('inspect-tabs').remove();const body=$('inspect-body');
+ $('inspector-caption').textContent='APPEARANCE INSPECTOR';$('inspector-title').textContent='직접 관리 · 셸과 테마';$('inspector-subtitle').textContent='셸 기능과 터미널 앱 설정을 구분합니다.';$('inspect-tabs').remove();const body=$('inspect-body');
  field(body,'선택한 테마',appearance.values.theme,['robbyrussell','agnoster','minimal'],v=>{appearance.values.theme=v;mark();renderAppearance()},'theme-select').disabled=!appearance.enabled;
  field(body,'프레임워크 경로',appearance.values.dir,null,v=>{appearance.values.dir=v;mark()},'framework-path');
  field(body,'화면 미리보기 글꼴',previewFont,['ui-monospace','Cascadia Code','Consolas','monospace'],v=>{previewFont=v;updateTerminal()},'preview-font');
@@ -108,41 +247,55 @@ function renderAppearance(){
 }
 function updateTerminal(){const target=$('terminal-live');if(!target)return;const a=draft.features.ohmyzsh;const prompt=!a.enabled?'~/projects %':a.values.theme==='agnoster'?'dev / ~/projects /':a.values.theme==='minimal'?'~/projects $':'➜ projects git:(main)';target.replaceChildren(el('span',prompt,'prompt'),document.createTextNode('\necho hello\nhello\n'),el('span','▏','prompt'));target.style.fontFamily=previewFont+',monospace';target.style.fontSize=previewSize+'px';$('terminal-label').textContent='zsh · '+(a.enabled?a.values.theme:'기본 프롬프트')}
 function renderProfiles(){
- const root=$('page-body');root.replaceChildren();const global=groupBox('Git 기록에 사용할 신원',root);switchRow(global,'폴더별 Git 신원 설정','커밋 이름·이메일을 gitdir로 선택합니다. 서비스 인증은 연결 설정에서 별도로 고릅니다.',draft.git.enabled,()=>{draft.git.enabled=!draft.git.enabled;mark();renderProfiles()});switchRow(global,'미분류 폴더의 커밋 신원 차단','Git 신원을 켰을 때만 적용합니다. 실수로 다른 계정의 이름·이메일을 사용하는 것을 막습니다.',draft.git.blockUnclassified,()=>{draft.git.blockUnclassified=!draft.git.blockUnclassified;mark();renderProfiles()});
+ const root=$('page-body');root.replaceChildren();
+ explanation(root,'폴더별 자동 적용은 여기서 설정합니다.','폴더 규칙을 만들고 그 폴더에서 사용할 Git 연결을 지정하세요. 커밋 작성자 이름·이메일도 함께 지정할 수 있습니다. 자동 적용이 필요 없으면 비워 두고 Git 연결을 직접 선택하면 됩니다.');
+ const global=groupBox('폴더별 커밋 작성자 · 선택',root);
+ switchRow(global,'커밋 작성자도 폴더별로 지정','접속 연결의 자동 적용과 별개입니다. 켜면 활성 폴더 규칙의 작성자 이름·이메일이 필요합니다.',draft.git.enabled,()=>{draft.git.enabled=!draft.git.enabled;mark();renderProfiles()});
+ switchRow(global,'규칙 밖 폴더의 커밋 신원 차단','작성자 지정을 켰을 때만 적용합니다. 다른 계정의 이름·이메일로 커밋하는 실수를 막습니다.',draft.git.blockUnclassified,()=>{draft.git.blockUnclassified=!draft.git.blockUnclassified;mark();renderProfiles()});
  const grid=el('div',undefined,'profile-grid');root.append(grid);
- for(const p of draft.profiles){const body=groupBox(p.name,grid);body.dataset.profile=p.id;switchRow(body,'프로필 사용',p.id,p.enabled,()=>{p.enabled=!p.enabled;mark();renderProfiles()});
-  for(const [key,label] of [['name','표시 이름'],['path','프로젝트 폴더 · 중첩 없이'],['author','Git 커밋 작성자'],['email','Git 커밋 이메일']])field(body,label,p[key],null,v=>{p[key]=v;mark()},'profile-'+p.id+'-'+key);
-  body.append(button('프로필 삭제',()=>{if(draft.connections.some(c=>c.profile===p.id)){toast('이 프로필에 연결된 서비스를 먼저 옮기거나 삭제하세요.');return}draft.profiles=draft.profiles.filter(x=>x.id!==p.id);mark();renderProfiles()},'quiet danger'));
+ for(const p of draft.profiles){
+  const body=groupBox(p.name,grid);body.dataset.profile=p.id;
+  switchRow(body,'이 폴더 규칙 사용','저장·적용 후 해당 폴더와 하위 저장소에서 사용합니다.',p.enabled,()=>{p.enabled=!p.enabled;mark();renderProfiles()});
+  for(const [key,label] of [['name','규칙 이름'],['path','자동 적용할 폴더 · 중첩 없이'],['author','Git 커밋 작성자'],['email','Git 커밋 이메일']])field(body,label,p[key],null,v=>{p[key]=v;mark()},'profile-'+p.id+'-'+key);
+  const connections=draft.connections.filter(c=>c.kind==='git'),scope=el('section',undefined,'connection-scope');scope.append(el('h3','이 폴더에서 자동으로 사용할 Git 연결'));
+  for(const c of connections){
+   const row=el('div',undefined,'settingrow'),label=el('span',c.name);for(const line of connectionLines(c))label.append(el('small',line));if(!c.enabled)label.append(el('small','대시보드 연결 사용 꺼짐'));
+   const toggle=makeSwitch(c.profile===p.id,()=>{c.profile=c.profile===p.id?'':p.id;mark();renderProfiles()},p.name+'에서 '+c.name+' 자동 적용');toggle.disabled=!p.enabled;row.append(label,toggle);scope.append(row);
+  }
+  if(!connections.length)scope.append(el('p','원격 저장소 접근에서 연결을 먼저 추가하면 여기에서 선택할 수 있습니다. 폴더 규칙만 먼저 만들 수도 있습니다.','hint'));
+  scope.append(button('원격 저장소 접근 열기 →',()=>navigate('connections')));body.append(scope);
+  body.append(button('폴더 규칙 삭제',()=>{if(draft.connections.some(c=>c.profile===p.id)){toast('이 규칙을 사용하는 연결의 폴더 지정을 먼저 해제하세요.');return}draft.profiles=draft.profiles.filter(x=>x.id!==p.id);mark();renderProfiles()},'quiet danger'));
  }
- explanation(root,'폴더와 서비스는 여러 개씩 연결할 수 있습니다.','한 프로필에서 GitHub SSH와 GitLab HTTPS를 함께 쓸 수 있습니다. linked worktree는 원본 저장소의 Git 관리 디렉터리를 따릅니다.');
+ explanation(root,'기존 작성자 규칙은 원본을 유지합니다.','가져온 원격 URL 기반 규칙은 위의 기존 설정 참조에서 확인합니다. 여기의 폴더 규칙으로 자동 변환하거나 덮어쓰지 않습니다. linked worktree는 원본 저장소의 Git 관리 디렉터리를 따릅니다.');
 }
 function renderTools(){
  const root=$('page-body');root.replaceChildren();explanation(root,'필요한 도구만 선택','선택 후 저장하면 적용 안내에 미설치 도구와 필요한 의존성의 설치 명령이 나옵니다. 화면의 선택만으로 설치하거나 로그인하지 않습니다. 끄면 프로그램을 삭제하지 않습니다.');
  const categories={shell:'셸과 이동',navigation:'목록 선택',terminal:'터미널',search:'파일 검색과 읽기',runtime:'언어 실행 환경',development:'개발 기본 도구',ai:'AI 도구',services:'외부 서비스'};const grids={};
- for(const definition of snapshot.definitions.filter(f=>f.id!=='ohmyzsh')){const category=definition.category;if(!grids[category]){root.append(el('h2',categories[category]||category));grids[category]=el('div',undefined,'tool-grid');root.append(grids[category])}const f=draft.features[definition.id],body=groupBox(definition.name,grids[category]);switchRow(body,'이 기능 사용',definition.desc,f.enabled,()=>{f.enabled=!f.enabled;mark();renderTools()});body.append(badge(definition.installed?'설치됨 · 설정만 변경':'설치 필요',definition.installed?'green':'amber'));
+ for(const definition of snapshot.definitions.filter(f=>f.id!=='ohmyzsh')){const category=definition.category;if(!grids[category]){root.append(el('h2',categories[category]||category));grids[category]=el('div',undefined,'tool-grid');root.append(grids[category])}const f=draft.features[definition.id],body=groupBox(definition.name,grids[category]);switchRow(body,'대시보드 관리에 포함',definition.desc,f.enabled,()=>{f.enabled=!f.enabled;mark();renderTools()});body.append(badge(definition.id==='colors'?'설정 항목 · 설치 대상 아님':definition.installed?'현재 설치 감지':'설치 미감지',definition.installed?'green':'amber'));
   for(const dependency of definition.dependencies||[])body.append(el('p',dependency.name+' · '+(dependency.installed?'준비됨':'준비 필요')+' — '+dependency.reason,'note'));
   const fields=el('div');fields.style.marginTop='20px';body.append(fields);for(const x of definition.fields)field(fields,x.label,f.values[x.key],x.options||null,v=>{f.values[x.key]=v;mark()},'tool-'+definition.id+'-'+x.key,x.type||'text');
  }
- root.append(el('p','셸 테마는 ‘셸과 테마’, Git·SSH·HTTPS·API는 ‘연결과 서비스’에서 관리합니다.','note'));
+ root.append(el('p','셸 테마는 ‘셸과 테마’, Git·SSH·HTTPS·API는 ‘원격 저장소 접근 또는 원격 접속’에서 관리합니다.','note'));
 }
-function renderSecrets(){
- const root=$('page-body');root.replaceChildren();if(!draft.credentials.length){explanation(root,'아직 인증 참조가 없습니다.','서비스 연결을 만든 후 해당 연결에서 필요한 키나 토큰의 참조를 추가하세요. 이 화면에서는 참조를 모아서 관리할 수 있습니다.');return}
- const grid=el('div',undefined,'tool-grid');root.append(grid);
- for(const ref of draft.credentials){const body=groupBox(ref.id,grid),uses=draft.connections.filter(c=>c.credential===ref.id||c.api.credential===ref.id);body.append(el('p',uses.length?'사용 연결: '+uses.map(c=>c.name).join(', '):'현재 연결에서 사용하지 않는 참조','tool-state'));
-  const ssh=uses.some(c=>c.credential===ref.id&&c.method==='ssh')||ref.source==='agent'||ref.kind==='sshkey';credentialFields(body,ref,uses.length?[ref.source]:Object.keys(sources),()=>mark(),ssh);
-  body.append(button('참조 삭제',()=>{if(uses.length){toast('연결에서 참조를 해제한 뒤 삭제하세요.');return}draft.credentials=draft.credentials.filter(c=>c.id!==ref.id);mark();renderSecrets()},'quiet danger'));
+function secretPurpose(ref){return ref.purpose||(ref.kind==='sshkey'||ref.source==='agent'||draft.connections.some(c=>c.method==='ssh'&&c.credential===ref.id)?'ssh-key':'token')}
+function renderSecrets(){renderSecretSshWorkflow()}
+function renderSecretInventory(parent,purpose){
+ const root=el('details',undefined,'group');root.append(el('summary',purpose==='ssh-key'?'등록한 SSH 키 참조 · 직접 편집':'등록한 토큰 참조 · 직접 편집'));parent.append(root);
+ const grid=el('div',undefined,'tool-grid');root.append(el('h2',purpose==='ssh-key'?'등록한 SSH 키 참조':'등록한 토큰 참조'),grid);
+ if(!draft.credentials.some(ref=>secretPurpose(ref)===purpose))grid.append(el('p','등록한 인증정보가 없습니다. 필요한 키·토큰만 추가하세요.','hint'));
+ for(const ref of draft.credentials.filter(ref=>secretPurpose(ref)===purpose)){const body=groupBox(ref.id,grid),uses=draft.connections.filter(c=>c.credential===ref.id||c.api.credential===ref.id);
+  body.append(el('p',uses.length?'연결된 항목: '+uses.map(c=>c.name+(c.method==='ssh'&&sshMode(c)==='system'&&c.credential===ref.id?' · SSH 연동 사용 안 함':'')).join(', '):'아직 연결하지 않은 인증정보','tool-state'));
+  const ssh=secretPurpose(ref)==='ssh-key';
+  field(body,'항목 용도',secretPurpose(ref),[['ssh-key','SSH 키'],['token','토큰']],value=>{ref.purpose=value;if(value==='password'){ref.source='bitwarden';if(ref.kind==='sshkey')ref.kind='login'}else if(value==='ssh-key'){if(!['bitwarden','agent'].includes(ref.source))ref.source='bitwarden';if(ref.kind==='login')ref.kind='sshkey'}else{if(ref.source==='agent')ref.source='bitwarden';if(ref.kind==='sshkey')ref.kind='note'}mark();renderSecretFlow()},'purpose-'+ref.id);
+  let allowed=ssh?['bitwarden','agent']:['bitwarden','git-helper','environment'];for(const c of uses){if(c.credential===ref.id&&!(c.method==='ssh'&&sshMode(c)==='system'))allowed=allowed.filter(source=>compatible(source,'git',c));if(c.api.enabled&&c.api.credential===ref.id)allowed=allowed.filter(source=>compatible(source,'api',c));}if(!allowed.includes(ref.source))allowed.push(ref.source);
+  credentialFields(body,ref,allowed,()=>{mark()},ssh);
+  body.append(button('등록 삭제',()=>{if(uses.length){toast('연결에서 연동을 해제한 뒤 삭제하세요.');return}draft.credentials=draft.credentials.filter(c=>c.id!==ref.id);mark();renderSecretFlow()},'quiet danger'));
  }
 }
-function renderSessions(){
- const root=$('page-body');root.replaceChildren();const body=groupBox('SSH agent의 키 수명',root);field(body,'새 키 TTL · 초 (60~86400)',draft.session.keyLifetime,null,v=>{draft.session.keyLifetime=Number(v);mark()},'session-ttl','number');explanation(body,'새로 로드하는 키에만 적용','이미 agent에 있던 키의 수명은 바꾸지 않습니다. 기존 agent에 맡긴 키의 수명과 잠금 정책도 해당 공급자가 관리합니다.');
- const cleanup=groupBox('작업 종료와 인증정보 정리',root);cleanup.append(el('pre','bwe','long-pre'));explanation(cleanup,'이 셸이 추가한 키와 알려진 세션 변수 정리','공유 agent의 기존 키는 보존합니다. 직접 만든 agent도 비어 있을 때만 종료합니다. 도달할 수 없는 agent는 정리 기록을 남겨 다시 시도할 수 있게 합니다.');explanation(cleanup,'서버의 토큰 만료·폐기는 별도','토큰은 공급자에서 읽어 명령마다 전달합니다. 메모리에서 없애는 동작이 GitHub·GitLab의 토큰을 폐기하지는 않습니다. 외부 helper·사용자 지정 환경변수는 해당 공급자 정책을 확인하세요.');
- const status=groupBox('현재 조회 범위',root);status.append(el('p','SSH agent: '+snapshot.auth_status.agent,'tool-state'),el('p','Bitwarden vault: '+snapshot.auth_status.vault,'tool-state'),el('p',snapshot.auth_status.scope,'hint'),button('설치·서버 상태 다시 확인',refreshMetadata));
-}
-function renderOverview(){
- const root=$('page-body');root.replaceChildren();const grid=el('div',undefined,'profile-grid');root.append(grid);
- for(const [title,key,text] of [['실행 환경','appearance','zsh와 Oh My Zsh 테마, 선택 도구'],['작업 신원','profiles',draft.profiles.filter(p=>p.enabled).length+'개 프로필 · gitdir 범위'],['원격 접속','connections',draft.connections.filter(c=>c.enabled).length+'개 활성 연결 · SSH/HTTPS'],['인증정보','secrets',draft.credentials.length+'개 참조 · 키/토큰 값 저장 안 함']]){const body=groupBox(title,grid);body.append(el('p',text,'tool-state'),button('관리 →',()=>navigate(key)))}
- const guide=groupBox('설정이 실제 작업에 반영되는 순서',root);guide.append(el('p','1. 셸·도구 선택 → 2. 작업 폴더·신원 → 3. 서비스·통신 방식 → 4. 인증 참조 → 5. 검토·저장 → 6. 적용 안내 실행','tool-state'),button('설치·configure·인증 안내',()=>navigate('plan'),'btn primary'));explanation(guide,'각 설정은 독립적입니다.','테마만 사용하거나, API 도구 없이 Git만 사용해도 됩니다. 단계는 이해를 위한 순서이며 모든 기능을 활성화할 필요는 없습니다.');guide.append(button('설치·서버 상태 다시 확인',refreshMetadata));
-}
+// Compatibility entry points; supply and connection settings have separate owners.
+function renderSecretLinks(){navigate('connections',{primary:true})}
+function renderProviders(){renderBitwardenSettings()}
+function renderSessions(){navigate('key-supply',{primary:true})}
 function planText(plan){
  const lines=['dotfiles 설정 적용 안내','활성화된 설정에 필요한 단계만 포함합니다. 설치된 도구는 재설치하지 마세요.','조건별 명령을 한꺼번에 실행하지 마세요. 로그인·2FA는 사용자에게 맡기고, 해당 상태의 분기만 실행하세요.','예시 clone의 OWNER/REPO와 대상 경로는 실제 값으로 바꾼 뒤 실행하세요.',''];
  for(const [index,stage] of plan.workflow.entries()){
@@ -168,7 +321,7 @@ function renderInstruction(parent,block){
  parent.append(outer);
 }
 function renderPlan(){
- const root=$('page-body');root.replaceChildren();const data=preview||snapshot,body=groupBox('현재 설정에 맞춘 실행 순서',root);
+ const root=$('page-body');root.replaceChildren();renderChangeHeader(root);if(diff(baseline,draft).length||snapshot.revision==='new'){const pending=groupBox('설정 저장 후 적용',root);pending.append(el('p','위에서 설정을 검토·저장하면 저장된 내용에 맞는 적용 방법과 실행 확인이 표시됩니다.','tool-state'));return}const data=preview||snapshot,body=groupBox('저장한 설정의 적용 방법',root);
  body.append(el('p',preview?'검증한 초안 기준입니다. 설정 파일 생성 단계에서 먼저 저장한 뒤 명령을 실행하세요.':'저장된 설정 기준입니다. 화면에서 값을 바꿨다면 초안 기준 안내를 갱신하세요.','hint'));
  body.append(el('p','같은 WSL / macOS / Linux 터미널에서 진행하세요. 로그인·키 로드는 이 페이지가 자동으로 실행하지 않습니다.','tool-state'));
  const actions=el('div',undefined,'inline-actions');actions.append(button('초안 기준 안내 갱신',async()=>{try{await updatePreview();renderPlan()}catch(e){toast(e.message)}}),button('AI에게 전달할 안내 복사',async()=>{try{const p=(await updatePreview()).plan;await navigator.clipboard.writeText(planText(p));toast('조건과 실행 순서가 포함된 안내를 복사했습니다.')}catch(e){toast(e.message)}}));body.append(actions);
@@ -180,24 +333,54 @@ function renderPlan(){
   index.append(button((number+1)+'. '+stage.title,()=>section.scrollIntoView({behavior:'smooth',block:'start'}),'btn'));
  }
  const notes=el('details',undefined,'runbook-notes');notes.append(el('summary','적용 범위와 설정 우선순위'));for(const note of data.plan.notes)notes.append(el('p',note,'tool-state'));body.append(notes);
- const files=el('details',undefined,'group generated-files');files.append(el('summary','생성되는 파일'));const filebody=el('div',undefined,'card-pad');files.append(filebody);root.append(files);renderFiles(filebody,data.files);
+ const files=el('details',undefined,'group generated-files');files.append(el('summary','전체 생성 파일 보기'));const filebody=el('div',undefined,'card-pad');files.append(filebody);root.append(files);renderFiles(filebody,data.files,preview?'draft':'saved');renderChangeConfirmation(root);
 }
 
-function renderFiles(body,files=(preview||snapshot).files){const note=el('p',preview?'검증한 초안의 생성 예정 내용입니다.':'저장된 설정의 생성 내용입니다. 초안 변경은 ‘미리보기 갱신’으로 확인하세요.','hint');body.append(note);const names=Object.keys(files);if(!names.length){body.append(el('p','필수 설정을 채워야 생성 내용을 볼 수 있습니다.','hint'));return}const select=el('select',undefined,'file-picker');select.setAttribute('aria-label','생성 파일 선택');const pre=el('pre',undefined,'long-pre');for(const name of names)select.append(el('option',name));select.onchange=()=>pre.textContent=files[select.value];pre.textContent=files[names[0]];body.append(select,pre,button('초안 미리보기 갱신',async()=>{try{const data=await updatePreview();body.replaceChildren();renderFiles(body,data.files)}catch(e){toast(e.message)}}));}
-function makeCredential(id,source='bitwarden'){return {id,source,kind:'note',item:'',variable:'',helper:'cache',username:''}}
+function connectionFiles(files,c){
+ const selected={};
+ if(c.kind==='server'){
+  const alias=c.sshAlias||c.id,lines=(files['ssh.config']||'').split('\n');let copying=false,block=[];
+  for(const line of lines){if(line.startsWith('Host ')){if(copying)break;copying=line==='Host '+alias;}if(copying)block.push(line);}
+  if(block.length)selected['ssh.config · 이 연결의 항목']=block.join('\n');
+ }else for(const name of c.profile?['profile-'+c.profile+'.gitconfig','ssh-'+c.profile+'.config']:['connection-'+c.id+'.gitconfig','ssh-connection-'+c.id+'.config'])if(Object.hasOwn(files,name))selected[name]=files[name];
+ return selected;
+}
+function renderConnectionAdvanced(body,c){
+ body.append(button('SSH 키 공급·유지 시간 →',()=>navigate('key-supply',{primary:true}),'quiet'));
+ const details=el('details');details.append(el('summary','이 연결에 적용될 설정 파일 보기'));const content=el('div');details.append(content);body.append(details);
+ content.append(el('p',c.profile?'폴더 규칙을 공유하는 연결은 같은 설정 파일을 사용합니다. 아래 파일에 함께 포함될 수 있습니다.':'이 연결의 Git·SSH 설정만 표시합니다. 전체 파일은 변경 검토·적용에서 확인하세요.','hint'));
+ const showPreview=async()=>{const state=JSON.stringify(draft);try{const data=await api('/api/preview',draft);if(state!==JSON.stringify(draft)){toast('초안이 바뀌었습니다. 다시 미리보기를 실행하세요.');return}content.replaceChildren();content.append(el('p',c.profile?'공유 폴더 규칙의 설정 파일입니다. 같은 규칙을 쓰는 다른 연결이 포함될 수 있습니다.':'이 연결에 해당하는 설정입니다.','hint'));renderFiles(content,connectionFiles(data.files,c),'draft',showPreview);}catch(e){toast(e.message)}};
+ content.append(button('현재 초안 검증·미리보기',showPreview,'btn'));
+ const id=el('details');id.append(el('summary','명령용 연결 ID'),el('p',c.id+' · 명령과 설정에서 사용하는 식별자입니다. 표시 이름과 별개입니다.','hint'));body.append(id);
+}
+function renderFiles(body,files=snapshot.files,source='saved',refresh=null){
+ body.append(el('p',source==='draft'?'현재 초안을 검증한 생성 예정 내용입니다. 아직 저장·적용하지 않았습니다.':'저장된 설정의 생성 결과입니다. 현재 저장 전 변경사항은 포함하지 않습니다.','hint'));
+ const names=Object.keys(files);if(!names.length){body.append(el('p','이 연결의 별도 생성 파일이 없습니다. 기존 SSH 설정 사용 방식은 SSH 파일을 생성하지 않습니다.','hint'));}
+ else {const select=el('select',undefined,'file-picker');select.setAttribute('aria-label','설정 파일 선택');const pre=el('pre',undefined,'long-pre');for(const name of names)select.append(el('option',name));select.onchange=()=>pre.textContent=files[select.value];pre.textContent=files[names[0]];body.append(select,pre);}
+ body.append(button('초안 검증·미리보기 갱신',async()=>{if(refresh){refresh();return}const state=JSON.stringify(draft);try{const data=await api('/api/preview',draft);if(state!==JSON.stringify(draft)){toast('초안이 바뀌었습니다. 다시 실행하세요.');return}body.replaceChildren();renderFiles(body,data.files,'draft')}catch(e){toast(e.message)}}));
+}
+
+function makeCredential(id,source='bitwarden'){return {id,source,purpose:view==='key-supply'?'ssh-key':'token',kind:'note',item:'',variable:'',helper:'cache',username:''}}
 function uniqueId(base,list){let id=base,i=2;while(list.some(x=>x.id===id))id=base+'-'+i++;return id}
 function newCredential(c=null,role='git'){
  const proposed=uniqueId(c?c.id+'-'+role:'credential',draft.credentials);
- openAdd('인증 참조 추가',proposed,id=>{const ref=makeCredential(id);if(c&&role==='git'&&c.method==='https')ref.username=c.provider==='github'?'x-access-token':c.provider==='gitlab'?'oauth2':'';draft.credentials.push(ref);if(c){if(role==='api')c.api.credential=id;else c.credential=id}mark();if(view==='connections'){renderInspector();renderMap()}else renderSecrets()});
+ openAdd('키·토큰 참조 직접 등록',proposed,id=>{const ref=makeCredential(id);if(c&&role==='git'&&c.method==='https')ref.username=c.provider==='github'?'x-access-token':c.provider==='gitlab'?'oauth2':'';draft.credentials.push(ref);if(c){if(role==='api')c.api.credential=id;else c.credential=id}mark();if(connectionView()){renderInspector();renderMap()}else renderSecretFlow()},'credentials');
 }
-function openAdd(title,id,callback){$('add-title').textContent=title;$('add-fields').replaceChildren();const input=field($('add-fields'),'ID · 영문 소문자·숫자·하이픈',id,null,null,'new-id');$('add-error').textContent='';$('confirm-add').onclick=()=>{try{const value=input.value.trim();if(!/^[a-z][a-z0-9-]{0,63}$/.test(value))throw Error('ID 형식을 확인하세요.');const list=title.includes('프로필')?draft.profiles:title.includes('인증')?draft.credentials:draft.connections;if(list.some(x=>x.id===value))throw Error('이미 사용 중인 ID입니다.');callback(value);$('add-modal').close()}catch(e){$('add-error').textContent=e.message}};$('add-modal').showModal();input.focus();}
-function addItem(){if(view==='profiles'){openAdd('작업 프로필 추가',uniqueId('profile',draft.profiles),id=>{draft.profiles.push({id,name:'새 프로필',path:'~/'+id+'/',author:'',email:'',enabled:false});mark();renderProfiles()})}else if(view==='secrets')newCredential();else if(view==='connections'){
- if(!draft.profiles.length){toast('작업 프로필을 먼저 추가하세요.');navigate('profiles');return}
- openAdd('서비스 연결 추가',uniqueId('connection',draft.connections),id=>{const profile=draft.profiles.find(p=>p.enabled)||draft.profiles[0];draft.connections.push({id,name:'새 연결',profile:profile.id,provider:'github',host:'github.com',kind:'git',enabled:false,method:'ssh',sshUser:'git',publicKey:'~/.ssh/keys/'+profile.id+'.pub',credential:'',api:{enabled:false,tool:'gh',credential:'',host:''}});chosen=id;group='all';search='';mark();renderConnections()});
+function openAdd(title,id,callback,collection){$('add-title').textContent=title;$('add-fields').replaceChildren();const input=field($('add-fields'),'ID · 영문 소문자·숫자·하이픈',id,null,null,'new-id');$('add-error').textContent='';$('confirm-add').onclick=()=>{try{const value=input.value.trim();if(!/^[a-z][a-z0-9-]{0,63}$/.test(value))throw Error('ID 형식을 확인하세요.');const list=collection?draft[collection]:title.includes('프로필')?draft.profiles:title.includes('인증')?draft.credentials:draft.connections;if(list.some(x=>x.id===value))throw Error('이미 사용 중인 ID입니다.');callback(value);$('add-modal').close()}catch(e){$('add-error').textContent=e.message}};$('add-modal').showModal();input.focus();}
+function addItem(){if(view==='profiles'){openAdd('폴더 규칙 추가',uniqueId('profile',draft.profiles),id=>{draft.profiles.push({id,name:'새 폴더 규칙',path:'~/'+id+'/',author:'',email:'',enabled:false});mark();renderProfiles()},'profiles')}else if(['secrets','secret-tokens','remote-secrets'].includes(view))newCredential();else if(connectionView()){
+ $('add-title').textContent='연결 추가';$('add-fields').replaceChildren();$('add-error').textContent='';
+ const selectedKind=connectionKind();
+ const name=field($('add-fields'),'연결 이름','',null,null,'new-connection-name');name.placeholder=connectionKind()==='git'?'예: 개인 GitHub':'예: 개발 서버';
+ $('confirm-add').onclick=()=>{
+  if(!name.value.trim()){ $('add-error').textContent='연결 이름을 입력하세요.';name.focus();return;}
+  const id=uniqueId(selectedKind==='git'?'git-connection':'ssh-server',draft.connections);
+  draft.connections.push({id,name:name.value.trim(),profile:'',provider:'generic',host:'',kind:selectedKind,enabled:false,method:'ssh',sshMode:'system',sshUser:'',publicKey:'',credential:'',api:{enabled:false,tool:'none',credential:'',host:''}});
+  chosen=id;search='';inspector='connection';$('add-modal').close();mark();renderConnections();
+ };$('add-modal').showModal();name.focus();
 }}
-async function refreshMetadata(){try{const data=await api('/api/state');snapshot.definitions=data.definitions;snapshot.auth_status=data.auth_status;if(data.revision!==snapshot.revision)notice('다른 프로세스에서 설정이 바뀌었습니다. 새 설정을 불러온 뒤 편집하세요. 현재 초안을 복사해 보관할 수 있습니다.');navigate(view);toast('설치 여부와 서버 프로세스 상태를 갱신했습니다. 초안은 유지합니다.')}catch(e){toast(e.message)}}
+async function refreshMetadata(){try{const data=await api('/api/state');snapshot.definitions=data.definitions;snapshot.auth_status=data.auth_status;snapshot.setup_progress=data.setup_progress;snapshot.shared_environment=data.shared_environment;snapshot.host_state=data.host_state;if(typeof progressBasis!=='undefined'){progressBasis=clone(data.state);progressSnapshot=snapshot;}if(data.revision!==snapshot.revision)notice('다른 프로세스에서 설정이 바뀌었습니다. 새 설정을 불러온 뒤 편집하세요. 현재 초안을 복사해 보관할 수 있습니다.');navigate(view);toast('설치 여부와 서버 프로세스 상태를 갱신했습니다. 초안은 유지합니다.')}catch(e){toast(e.message)}}
 async function review(){if(busy)return;busy=true;$('review-button').disabled=true;try{const data=await updatePreview(),changes=diff(baseline,draft);$('review-content').textContent=changes.length?changes.map(c=>c.path+'\n  이전: '+JSON.stringify(c.before??null)+'\n  변경: '+JSON.stringify(c.after??null)).join('\n\n'):'값의 변경은 없습니다. 현재 설정 파일을 다시 생성합니다.';$('save-error').textContent='';$('review-modal').showModal()}catch(e){notice(e.message);toast(e.message)}finally{busy=false;$('review-button').disabled=false}}
-async function save(){if(busy)return;busy=true;$('confirm-review').disabled=true;try{snapshot=await api('/api/settings',draft);draft=clone(snapshot.state);baseline=clone(snapshot.state);preview=null;$('review-modal').close();notice('설정 파일을 생성했습니다. 적용 안내의 configure 명령을 실행하고 새 셸을 여세요. 이미 실행 중인 세션과 기존 remote URL은 바뀌지 않습니다.');navigate('plan');toast('설정 저장 완료. 설치·configure·인증 안내를 확인하세요.')}catch(e){$('save-error').textContent=e.message}finally{busy=false;$('confirm-review').disabled=false}}
-all('[data-view]').forEach(b=>b.onclick=()=>navigate(b.dataset.view));$('mobile-nav').onchange=e=>navigate(e.target.value);$('heading-action').onclick=addItem;$('review-button').onclick=review;$('confirm-review').onclick=save;$('close-review').onclick=()=>$('review-modal').close();$('cancel-add').onclick=()=>$('add-modal').close();$('about-link').onclick=e=>{e.preventDefault();navigate('plan')};$('reset-draft').onclick=()=>{draft=clone(baseline);preview=null;chosen='';notice(snapshot.migration_notice);navigate(view);toast('저장 전 초안을 취소했습니다.')};
+async function save(){if(busy)return;busy=true;$('confirm-review').disabled=true;try{snapshot=await api('/api/settings',draft);draft=clone(snapshot.state);baseline=clone(snapshot.state);preview=null;$('review-modal').close();notice('설정을 저장했습니다. 내 환경에서 설치·설정 적용을 이어가세요.');navigate('overview',{primary:true});toast('설정 저장 완료. 내 환경에서 적용할 수 있습니다.')}catch(e){$('save-error').textContent=e.message}finally{busy=false;$('confirm-review').disabled=false}}
+all('[data-view]').forEach(b=>b.onclick=()=>navigate(b.dataset.view));$('mobile-nav').onchange=e=>navigate(e.target.value);$('heading-action').onclick=addItem;$('review-button').onclick=()=>navigate('plan',{primary:true});$('confirm-review').onclick=save;$('close-review').onclick=()=>$('review-modal').close();$('cancel-add').onclick=()=>$('add-modal').close();$('about-link').onclick=e=>{e.preventDefault();navigate('plan')};$('reset-draft').onclick=()=>{draft=clone(baseline);preview=null;chosen='';notice(snapshot.migration_notice);navigate(view);toast('저장 전 초안을 취소했습니다.')};
 window.addEventListener('beforeunload',e=>{if(draft&&diff(baseline,draft).length){e.preventDefault();e.returnValue=''}});
-(async()=>{try{snapshot=await api('/api/state');draft=clone(snapshot.state);baseline=clone(snapshot.state);chosen=draft.connections[0]?.id||'';document.querySelector('.workspace small').textContent=snapshot.environment;document.querySelector('.footer span:last-child').textContent=snapshot.data_directory;notice(snapshot.migration_notice||snapshot.validation_error);navigate('connections')}catch(e){notice(e.message);$('page-body').replaceChildren(el('p','설정을 불러오지 못했습니다. 서버 로그와 설정 파일을 확인한 뒤 새로고침하세요.','notice'))}})();
+async function initializeDashboard(){try{snapshot=await api('/api/state');draft=clone(snapshot.state);baseline=clone(snapshot.state);chosen='';document.querySelector('.workspace small').textContent=snapshot.environment;document.querySelector('.footer span:last-child').textContent=snapshot.data_directory;notice(snapshot.migration_notice||snapshot.validation_error);all('.nav button,#mobile-nav,#review-button,#reset-draft').forEach(control=>control.disabled=false);restoreDashboardLocation()}catch(e){notice(e.message);$('page-body').replaceChildren(el('p','설정을 불러오지 못했습니다. 서버 로그와 설정 파일을 확인한 뒤 새로고침하세요.','notice'))}}

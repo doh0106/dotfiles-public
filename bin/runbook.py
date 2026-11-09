@@ -13,7 +13,7 @@ def build(state,dependencies,repo,data):
     active=[c for c in state['connections'] if c['enabled']]
     credentials={c['id']:c for c in state['credentials']}
     profiles={p['id']:p for p in state['profiles'] if p['enabled']}
-    refs={ref for c in active for ref in [c['credential'],c['api']['credential'] if c['api']['enabled'] else ''] if ref}
+    refs={ref for c in active for ref in (([c['credential']] if c['method']!='ssh' or cfg.ssh_mode(c)=='key' and not c.get('agentSocket') else [])+([c['api']['credential']] if c['api']['enabled'] else [])) if ref}
     vault_refs=[credentials[ref] for ref in sorted(refs) if credentials[ref]['source']=='bitwarden']
     stages=[]
     def stage(ident,title,description,blocks,view=None):
@@ -25,13 +25,13 @@ def build(state,dependencies,repo,data):
         for p in profiles.values():checks.append(block('작업 프로필 · '+p['name'],p['id']+' · '+p['path']+' · '+p['author']+' <'+p['email']+'>'))
     for c in active:
         api='API: '+c['api']['tool'] if c['api']['enabled'] else 'API 도구 사용 안 함'
-        checks.append(block('연결 · '+c['name'],c['id']+' · 프로필 '+c['profile']+' · '+c['host']+' · '+c['method'].upper()+' · '+api))
+        checks.append(block('연결 · '+c['name'],c['id']+' · 적용 범위 '+(c['profile'] or '프로필 없음 · 연결 ID로 직접 선택')+' · '+c['host']+' · '+c['method'].upper()+' · '+api))
     tool_names=[f['name'] for f in features.DEFINITIONS if state['features'][f['id']]['enabled'] and f['id']!='ohmyzsh']
-    if tool_names:checks.append(block('선택 도구',', '.join(tool_names)))
+    if tool_names:checks.append(block('도구 선택',', '.join(tool_names)))
     stage('review','선택한 환경 확인','켜진 기능과 연결만 이 안내에 포함됩니다. 폴더별 신원, 서비스 접속, API 인증은 각각 확인합니다.',checks or [block('선택 기능 없음','필요한 기능을 고른 뒤 안내를 갱신하세요.')],'overview')
     materials=[]
     for c in active:
-        if c['method']!='ssh':continue
+        if c['method']!='ssh' or cfg.ssh_mode(c)=='system':continue
         path=str(Path(c['publicKey']).expanduser());exists=Path(path).is_file()
         links=[]
         if c['kind']=='git' and c['provider']=='github' and cfg.host_parts(c['host'])[0]=='github.com':links=[dict(label='개인 GitHub 계정의 SSH 키 관리',url='https://github.com/settings/keys')]
@@ -42,8 +42,10 @@ def build(state,dependencies,repo,data):
         location={'note':'Secure Note 본문','sshkey':'SSH Key의 private key','login':'Login의 password'}[reference['kind']]
         content='SSH 개인키 전체' if ssh else '토큰 한 줄'
         materials.append(block('Bitwarden · '+reference['id'],'항목 이름/ID: '+reference['item']+' · '+location+'에 '+content+'를 보관합니다. '+('추가 passphrase가 필요한 키는 기존 agent에서 먼저 준비하세요. ' if ssh else '')+'항목 형식이 다르면 연결의 인증 참조를 수정하세요. 비밀값은 대시보드에 입력하지 않습니다.'))
-    if materials:stage('materials','인증 재료 확인','공개키 파일, 비밀정보 항목의 이름·형식을 확인합니다. 실제 비밀값이나 vault 상태는 이 화면에서 조회하지 않습니다.',materials,'connections')
-    stage('save','검토 후 설정 파일 생성','대시보드의 「변경 검토 → 저장 · 설정 파일 생성」을 누르세요. 저장한 설정을 기준으로 다음 명령을 실행합니다.',[block('저장과 실행은 별개','초안 미리보기는 파일을 바꾸지 않습니다. 이미 같은 값을 저장했다면 그대로 다음 단계로 진행하세요.')])
+    connection_kinds={c['kind'] for c in active}
+    connection_view='servers' if connection_kinds=={'server'} else 'connections' if connection_kinds=={'git'} else 'overview'
+    if materials:stage('materials','인증 재료 확인','공개키 파일, 비밀정보 항목의 이름·형식을 확인합니다. 실제 비밀값이나 vault 상태는 이 화면에서 조회하지 않습니다.',materials,connection_view)
+    stage('save','검토 후 설정 파일 생성','변경 검토·적용 화면에서 내용을 검토한 뒤 「저장 · 설정 파일 생성」을 누르세요. 저장한 설정을 기준으로 다음 명령을 실행합니다.',[block('저장과 실행은 별개','초안 미리보기는 파일을 바꾸지 않습니다. 이미 같은 값을 저장했다면 그대로 다음 단계로 진행하세요.')])
     missing=[d for d in dependencies if not d['installed']]
     installed=[d for d in dependencies if d['installed']]
     installation=[]
@@ -60,7 +62,7 @@ def build(state,dependencies,repo,data):
         installation.append(block('Git LFS · 저장소별 설정','설치 후 LFS를 사용할 저장소 안에서만 실행하세요. 전역 필터는 자동 설정하지 않습니다.',['git lfs install --local'],when='해당 저장소에서 Git LFS를 사용할 때만',optional=True))
     if any(state['features'][key]['enabled'] for key in ('aws','claude','gemini','ngrok')):
         installation.append(block('서비스 도구의 로그인은 별도','이 안내는 프로그램만 설치합니다. 각 서비스 로그인·토큰 등록·터널 시작은 자동 실행하지 않습니다.'))
-    stage('configure','설정 연결 · configure','홈의 관리 설정과 선택 도구를 연결합니다. 이미 설치된 도구는 재설치하지 않으며, 설정을 바꾼 뒤에도 같은 명령을 사용할 수 있습니다.',[block('WSL / macOS / Linux 터미널에서 실행',commands=[shlex.join(['python3',str(repo/'bin/dashboard.py'),'configure'])])])
+    stage('configure','설정 연결 · configure','홈의 관리 설정과 도구 선택를 연결합니다. 이미 설치된 도구는 재설치하지 않으며, 설정을 바꾼 뒤에도 같은 명령을 사용할 수 있습니다.',[block('WSL / macOS / Linux 터미널에서 실행',commands=[shlex.join(['python3',str(repo/'bin/dashboard.py'),'configure'])])])
     stage('shell','새 zsh에서 시작','현재 셸을 새 zsh로 바꿔 선택한 integration을 읽습니다. 기존 셸에서 bws로 키를 로드한 상태라면 먼저 작업을 마치고 세션을 정리하세요.',[block('다음 인증 명령은 새 셸에서 실행',commands=['exec zsh'])])
     if vault_refs:
         stage('vault','Bitwarden 로그인 · 잠금 해제','같은 터미널에서 상태를 확인한 뒤 해당하는 경우 하나만 진행하세요. 이메일·마스터 비밀번호·2FA는 사용자가 직접 입력합니다.',[
@@ -73,8 +75,12 @@ def build(state,dependencies,repo,data):
     preparation=[]
     for c in active:
         credential=credentials.get(c['credential'])
-        if c['method']=='ssh':
-            text=('Bitwarden에서 개인키를 읽어 agent에 로드합니다. 새 키 TTL: '+str(state['session']['keyLifetime'])+'초. 이미 있는 키의 TTL은 바꾸지 않습니다.' if credential['source']=='bitwarden' else '기존 SSH agent에 대응하는 키를 준비하세요. 이 공급자에서는 키를 가져오거나 TTL을 변경하지 않고 공개키 일치 여부를 확인합니다.')
+        if c['method']=='ssh' and cfg.ssh_mode(c)=='system':
+            preparation.append(block(c['name']+' · 기존 SSH 설정 사용','기존 ~/.ssh/config·agent·SSH 인증 절차에 맡깁니다. 키 로드·vault 로그인·공개키 파일 준비를 요구하지 않습니다. 실제 서버 인증은 별도 확인하세요.'))
+        elif c['method']=='ssh' and c.get('agentSocket'):
+            preparation.append(block(c['name']+' · 대시보드 전용 agent','SSH 키 공급 화면에서 키를 공급하세요. 이 명령은 해당 agent의 상태만 확인하며 현재 터미널에 다른 agent를 만들거나 키를 다시 로드하지 않습니다.',[shlex.join(['env','SSH_AUTH_SOCK='+c['agentSocket'],'ssh-add','-l'])]))
+        elif c['method']=='ssh':
+            text=('Bitwarden에서 개인키를 읽어 agent에 로드합니다. 새 키 TTL: '+str(state['session']['keyLifetime'])+'초. 이미 있는 키의 TTL은 바꾸지 않습니다.' if credential and credential['source']=='bitwarden' else '기존 SSH agent에 대응하는 키를 준비하세요. 이 공급자에서는 키를 가져오거나 TTL을 변경하지 않고 공개키 일치 여부를 확인합니다.')
             preparation.append(block(c['name']+' · SSH 키 준비',text,[shlex.join(['ssh-keygen','-lf',str(Path(c['publicKey']).expanduser())]),shlex.join(['bws','--connection',c['id']]),'ssh-add -l']))
         elif credential and credential['source']=='bitwarden':
             preparation.append(block(c['name']+' · HTTPS 인증 준비','vault를 준비합니다. SSH agent는 시작하지 않으며, Git이 인증을 요청할 때 helper가 토큰을 읽습니다.',[shlex.join(['bws','--connection',c['id']])]))
@@ -86,26 +92,37 @@ def build(state,dependencies,repo,data):
     verification=[]
     for c in active:
         if c['method']=='ssh' and c['kind']=='git':
-            hostname,port=cfg.host_parts(c['host']);command=['ssh','-F',str(data/('ssh-'+c['profile']+'.config')),'-T']
+            hostname,port=cfg.host_parts(c['host']);command=['ssh','-T'] if cfg.ssh_mode(c)=='system' else ['ssh','-F',str(data/('ssh-'+c['profile']+'.config' if c['profile'] else 'ssh-connection-'+c['id']+'.config')),'-T']
             if port:command+=['-p',str(port)]
-            command+=[c['sshUser']+'@'+hostname];links=[]
+            command+=[hostname if cfg.ssh_mode(c)=='system' else c['sshUser']+'@'+hostname];links=[]
             text='처음 연결할 때 서버 host key의 fingerprint를 확인하세요. 서비스가 반환한 인증 계정이 본인 계정인지 확인합니다.'
             if c['provider']=='github' and hostname=='github.com':
                 text+=' GitHub의 “Hi USERNAME! … successfully authenticated”는 성공 응답이며 종료 코드 1도 정상입니다.'
                 links=[dict(label='GitHub 공식 서버 fingerprint',url='https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints'),dict(label='GitHub SSH 연결 확인 안내',url='https://docs.github.com/en/authentication/connecting-to-github-with-ssh/testing-your-ssh-connection')]
             verification.append(block(c['name']+' · SSH 접속 확인',text,[shlex.join(command)],links=links))
-        elif c['kind']=='server':verification.append(block(c['name']+' · SSH 설정 확인','설정만 출력하며 서버에 접속하지 않습니다. 실제 접속 시 서버 신원을 확인하세요.',[shlex.join(['ssh','-G',c.get('sshAlias') or c['id']])]))
+        elif c['kind']=='server':
+            hostname,port=cfg.host_parts(c['host'])
+            target=hostname if cfg.ssh_mode(c)=='system' else c.get('sshAlias') or c['id']
+            command=['ssh','-G']+(['-p',str(port)] if port and cfg.ssh_mode(c)=='system' else [])+[target]
+            verification.append(block(c['name']+' · SSH 설정 확인','OpenSSH가 적용할 설정을 확인합니다. 원본에 Match exec 등이 있으면 OpenSSH가 실행할 수 있으므로 내용을 먼저 확인하세요. 서버에 접속하는 명령은 아닙니다.',[shlex.join(command)]))
         if c['api']['enabled']:verification.append(block(c['name']+' · '+c['api']['tool']+' API 인증 확인','선택한 API 서비스 호스트의 토큰을 해당 CLI 자식 프로세스에만 전달합니다.',[shlex.join(['bw'+c['api']['tool'],'--connection',c['id'],'auth','status'])]))
-        if c['kind']=='git':verification.append(block(c['name']+' · 저장소 설정과 읽기 권한 확인','프로필 폴더 '+profiles[c['profile']]['path']+' 아래에 있는 실제 프로젝트 저장소로 이동한 뒤 실행하세요. origin의 호스트와 '+c['method'].upper()+' 방식이 이 연결과 맞아야 합니다. Git identity 관리를 켰다면 작성자 이메일도 확인하세요.',['git config --get dotfiles.profile','git config --show-origin --get user.email','git remote -v','git ls-remote origin'],when='해당 서비스의 기존 저장소에서 작업할 때만',optional=True))
+        if c['kind']=='git' and c['profile']:verification.append(block(c['name']+' · 저장소 설정과 읽기 권한 확인',(('프로필 폴더 '+profiles[c['profile']]['path']+' 아래의 ' ) if c['profile'] else '연결별 설정을 적용한 ' )+'실제 프로젝트 저장소로 이동한 뒤 실행하세요. origin의 호스트와 '+c['method'].upper()+' 방식이 이 연결과 맞아야 합니다. Git identity 관리를 켰다면 작성자 이메일도 확인하세요.',['git config --get dotfiles.profile','git config --show-origin --get user.email','git remote -v','git ls-remote origin'],when='해당 서비스의 기존 저장소에서 작업할 때만',optional=True))
+    for c in active:
+        if c['kind']=='git' and not c['profile']:
+            policy=str(data/('connection-'+c['id']+'.gitconfig'))
+            verification.append(block(c['name']+' · 프로필 없이 기존 저장소에서 사용','이 명령은 이 연결을 명시한 경우에만 적용합니다. 임의 폴더에 인증을 자동 주입하지 않습니다.',[shlex.join(['git','-c','include.path='+policy,'ls-remote','origin'])],optional=True))
     if verification:stage('verify','접속과 적용값 확인','인증 준비와 서버 접근 성공은 별개입니다. 실제 접속 확인은 여기의 명령을 터미널에서 직접 실행합니다.',verification)
     clone=[]
     for c in active:
         if c['kind']!='git':continue
         hostname,port=cfg.host_parts(c['host'])
-        url=('ssh://'+c['sshUser']+'@'+c['host']+'/OWNER/REPO.git' if port else c['sshUser']+'@'+hostname+':OWNER/REPO.git') if c['method']=='ssh' else 'https://'+c['host']+'/OWNER/REPO.git'
-        command=shlex.join(['git','-c','include.path='+str(data/('profile-'+c['profile']+'.gitconfig')),'clone',url,str(Path(profiles[c['profile']]['path']).expanduser()/'REPO')])
-        clone.append(block(c['name']+' · 최초 clone 예시','아직 저장소가 없어서 gitdir 조건이 적용되기 전이므로 프로필 include를 한 번 명시합니다. OWNER/REPO와 대상 폴더를 실제 값으로 바꾼 뒤 실행하세요.',[command],when='새 저장소가 필요할 때만',optional=True,example=True))
+        user='' if cfg.ssh_mode(c)=='system' else c['sshUser']+'@'
+        url=('ssh://'+user+c['host']+'/OWNER/REPO.git' if port else user+hostname+':OWNER/REPO.git') if c['method']=='ssh' else 'https://'+c['host']+'/OWNER/REPO.git'
+        command=shlex.join(['git','-c','include.path='+str(data/('profile-'+c['profile']+'.gitconfig' if c['profile'] else 'connection-'+c['id']+'.gitconfig')),'clone',url,str(Path(profiles[c['profile']]['path']).expanduser()/'REPO') if c['profile'] else '/PATH/TO/REPO'])
+        clone.append(block(c['name']+' · 최초 clone 예시','선택한 연결의 설정 파일을 명시합니다. 프로필이 없으면 폴더 자동 적용이 없으므로 기존 저장소에서도 git -c include.path=… 명령을 사용하거나 해당 저장소의 로컬 include로 연결하세요. OWNER/REPO와 대상 폴더는 실제 값으로 바꾸세요.',[command],when='새 저장소가 필요할 때만',optional=True,example=True))
     if clone:stage('clone','필요할 때만 새 저장소 가져오기','현재 환경 설정만 확인한다면 이 단계는 건너뛰세요.',clone)
+    if any(c['method']=='ssh' and cfg.ssh_mode(c)=='key' and c.get('agentSocket') for c in active):
+        stage('managed-agent','대시보드에서 공급한 키 정리','작업을 마친 뒤 SSH 키 공급 화면의 정리 버튼을 사용합니다. 다른 agent의 키는 변경하지 않습니다.',[block('전용 agent 수명','대시보드를 다시 시작한 뒤 SSH 키 공급에서 키를 다시 공급하세요. 전용 소켓 경로는 유지됩니다.')],'secrets')
     if refs:
         commands=['bwe']+[shlex.join(['unset',credentials[ref]['variable']]) for ref in sorted(env_refs)]
         stage('cleanup','작업을 마치면 같은 터미널에서 정리','인증 준비 직후가 아니라 Git·API 작업을 모두 마친 뒤 실행하세요.',[block('이 셸의 관리 키·세션 정리','새로 추가한 키만 제거하고, 이 셸이 사용한 vault를 잠급니다. 기존 키·다른 터미널·외부 helper 저장소·서버의 토큰 만료/폐기는 별도 관리입니다.',commands)])
