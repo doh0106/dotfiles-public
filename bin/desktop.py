@@ -60,6 +60,9 @@ def serve(instance, idle_seconds):
                 origin=f'http://127.0.0.1:{self.server.server_port}'
                 if not self.valid_host() or self.headers.get('Origin') != origin or self.headers.get('X-Dotfiles-Instance') != instance:
                     self.reply(403,{'error':'Invalid desktop request'});return
+                control=getattr(self.server,'environment_control',None)
+                if self.path.endswith('/stop') and control and control.status()['busy']:
+                    self.reply(409,{'error':'환경 작업이 진행 중입니다. 완료 후 종료하세요.'});return
                 last_seen[0]=time.monotonic()
                 self.reply(200,self.info())
                 if self.path.endswith('/stop'):
@@ -74,11 +77,14 @@ def serve(instance, idle_seconds):
     def idle_monitor():
         while not finished.wait(min(10,idle_seconds/3)):
             if time.monotonic()-last_seen[0]>idle_seconds:
+                control=getattr(server,'environment_control',None)
+                if control and control.status()['busy']:continue
                 server.shutdown();return
     threading.Thread(target=idle_monitor,daemon=True).start()
     try:server.serve_forever(poll_interval=0.2)
     finally:
         finished.set();server.server_close();dashboard.bridge.close()
+        if getattr(server,'secret_workflow',None):server.secret_workflow.close()
         try:
             if json.loads(STATE.read_text()).get('instance')==instance:STATE.unlink()
         except (OSError,ValueError):pass

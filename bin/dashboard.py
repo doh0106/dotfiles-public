@@ -21,6 +21,7 @@ import setup_progress
 import tailscale_setup
 import host_inventory
 import secret_workflow
+import environment_control
 from environment_bridge import bridge
 
 REPO=cfg.REPO
@@ -105,7 +106,7 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         try:
             if path=='/api/state':self.reply(200,snapshot(design_preview=getattr(self.server,'design_preview',False),catalog_url=getattr(self.server,'design_catalog_url',None)))
-            elif path in ('/','/index.html','/app.js','/secret-workflows.js','/inventory.js','/record-picker.js','/change-center.js','/environment.js','/desktop.js','/style.css','/design/dashboard-design.js','/design/preview.js','/design/preview.css','/onboarding.js','/navigation.js','/tailscale.js','/design/design-inspector.js','/design/design-inspector.css'):
+            elif path in ('/','/index.html','/app.js','/secret-workflows.js','/control-center.js','/inventory.js','/record-picker.js','/change-center.js','/environment.js','/desktop.js','/style.css','/design/dashboard-design.js','/design/preview.js','/design/preview.css','/onboarding.js','/navigation.js','/tailscale.js','/design/design-inspector.js','/design/design-inspector.css'):
                 file=REPO/'dashboard'/('index.html' if path in ('/','/index.html') else path[1:]);self.reply(200,file.read_bytes(),{'html':'text/html','js':'application/javascript','css':'text/css'}[file.suffix[1:]]+'; charset=utf-8')
             else:self.reply(404,{'error':'찾을 수 없습니다.'})
         except (ValueError,OSError,KeyError,TypeError) as exc:self.reply(400,{'error':'설정 읽기 실패: '+str(exc)})
@@ -114,6 +115,39 @@ class Handler(BaseHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin')!=origin:self.reply(403,{'error':'이 대시보드의 동일 출처 요청만 허용합니다.'});return
         if getattr(self.server,'design_preview',False) and self.path!='/api/preview':
             self.reply(403,{'error':'설계 미리보기에서는 설정 저장·인증 실행을 하지 않습니다.'});return
+        if self.path=='/api/control':
+            try:
+                import threading
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=8192:raise ValueError('환경 요청 크기 오류')
+                request=json.loads(self.rfile.read(size))
+                if not isinstance(request,dict):raise ValueError('환경 요청 형식 오류')
+                with secret_workflow.CREATION_LOCK:
+                    control=getattr(self.server,'environment_control',None)
+                    if control is None:
+                        def git_credentials():
+                            workflow=getattr(self.server,'secret_workflow',None)
+                            if workflow is None:return {}
+                            with workflow.lock:return workflow.github_install_environment()
+                        control=self.server.environment_control=environment_control.Control(plan,git_credentials)
+                action=request.get('action')
+                if request=={'action':'status'}:result=control.status()
+                elif set(request)=={'action','revision'} and action in ('apply','check_update','update','services','runtime'):result=control.start(action,request['revision'])
+                elif request=={'action':'restart'}:
+                    state=control.status()
+                    if state['busy'] or not state['job'] or not state['job'].get('restart_required'):raise ValueError('업데이트 완료 후 재시작할 수 있습니다.')
+                    def restart():
+                        import os,time
+                        time.sleep(.3)
+                        workflow=getattr(self.server,'secret_workflow',None)
+                        if workflow:workflow.close()
+                        bridge.close()
+                        os.execv(sys.executable,[sys.executable,*sys.argv])
+                    threading.Thread(target=restart,daemon=True).start();result={'restarting':True}
+                else:raise ValueError('지원하지 않는 환경 요청')
+                self.reply(200,result)
+            except (ValueError,OSError,TypeError,KeyError,subprocess.TimeoutExpired):self.reply(400,{'error':'환경 작업을 시작하지 못했습니다. 저장된 설정·진행 중 작업·연결을 확인하세요.'})
+            return
         if self.path in ('/api/secrets','/api/secret-session'):
             try:
                 size=int(self.headers.get('Content-Length','0'))

@@ -25,3 +25,11 @@ assert.match(first.id,/^[a-z][a-z0-9-]{0,63}$/);
 assert.equal(context.flowReference({item:'Personal SSH 키',kind:'note'},'ssh-key'),first);
 assert.equal(vm.runInContext('draft.credentials.length',context),1);
 console.log('PASS: bws import reuses existing references and accepts existing item names');
+
+const center=fs.readFileSync(require('node:path').join(__dirname,'../dashboard/control-center.js'),'utf8');
+vm.runInContext(center.slice(center.indexOf('function portableSettings('),center.indexOf('function renderControlCenter(')),context);
+const original={credentials:[]},keys=[{item:'personal-key',kind:'note'}];
+const exported=context.portableSettings(original,keys);
+assert.equal(original.credentials.length,0);assert.equal(exported.credentials[0].purpose,'ssh-key');assert.equal(context.portableSettings(exported,keys).credentials.length,1);
+assert.equal('privateKey' in exported.credentials[0],false);
+console.log('PASS: portable settings include existing bws references without changing the source or duplicating keys');

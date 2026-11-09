@@ -2,7 +2,7 @@
 // Browser state contains metadata and public keys only; vault sessions stay in the broker.
 const secretFlow={status:null,statusAttempted:false,busy:false,error:'',handoff:null,key:null,token:null,deliveryVariable:'SERVICE_TOKEN',programReference:'',searches:{'ssh-key':{query:'',items:[]},token:{query:'',items:[]}}};
 async function workflowRequest(request){const response=await fetch('/api/secrets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});const data=await response.json();if(!response.ok)throw Error(data.error);return data;}
-function renderSecretFlow(){if(view==='secrets')renderSecretSshWorkflow();else if(view==='secret-tokens')renderSecretTokenWorkflow();else if(view==='providers')renderBitwardenSettings();attachDomainNavigation();}
+function renderSecretFlow(){if(view==='key-supply')renderSecretSshWorkflow();else if(view==='secret-tokens')renderSecretTokenWorkflow();else if(view==='providers')renderBitwardenSettings();else if(view==='overview')renderControlCenter();attachDomainNavigation();}
 async function flowAction(request,done=()=>{}){
  if(secretFlow.busy)return;secretFlow.busy=true;secretFlow.error='';renderSecretFlow();
  try{const previous=secretFlow.status?.generation,result=await workflowRequest(request);done(result);secretFlow.status=request.action==='status'?result:await workflowRequest({action:'status'});if(previous&&previous!==secretFlow.status.generation){secretFlow.key=null;secretFlow.token=null;for(const search of Object.values(secretFlow.searches))search.items=[]}}
@@ -12,12 +12,29 @@ async function flowAction(request,done=()=>{}){
 function flowButton(title,request,done,disabled=false){const b=button(title,()=>flowAction(typeof request==='function'?request():request,done),'btn');b.disabled=secretFlow.busy||disabled||snapshot.design_preview;return b;}
 function flowStep(root,number,title,text){const box=groupBox(title,root);if(text)box.append(el('p',text,'tool-state'));return box;}
 function supplyHeader(root){
- const box=groupBox('Bitwarden 연결',root),status=secretFlow.status;
- box.append(badge(status?.connected?'연결됨 · '+Math.ceil(status.expires_in/60)+'분 남음':'연결 필요',status?.connected?'green':'amber'),button('Bitwarden 연결 설정 →',()=>navigate('providers'),'quiet'),flowButton('상태 새로 확인',{action:'status'}));
- if(secretFlow.error){const error=el('p',secretFlow.error,'notice');error.setAttribute('role','alert');box.append(error)}
+ const bar=el('div',undefined,'control-statusbar'),status=secretFlow.status;
+ bar.append(badge(status?.connected?'Bitwarden 연결됨':'Bitwarden 연결 필요',status?.connected?'green':'amber'));
+ if(!status?.connected&&view!=='providers')bar.append(button('연결하기',()=>navigate('providers'),'quiet'));
+ const refresh=flowButton('↻',{action:'status'});refresh.setAttribute('aria-label','Bitwarden 상태 새로고침');bar.append(refresh);root.append(bar);
+ if(secretFlow.error){const error=el('p',secretFlow.error,'notice');error.setAttribute('role','alert');root.append(error)}
  if(!status&&!secretFlow.statusAttempted&&!secretFlow.busy&&!snapshot.design_preview){secretFlow.statusAttempted=true;queueMicrotask(()=>flowAction({action:'status'}))}
 }
 function flowVault(root){
+ supplyHeader(root);
+ if(secretFlow.status?.connected){root.append(el('p','Bitwarden에 연결되어 있습니다. 필요한 값은 공급 작업에서 가져옵니다.','hint'));const more=el('details',undefined,'control-more');more.append(el('summary','연결 관리'),flowButton('대시보드 연결 해제',{action:'disconnect'}));root.append(more);instructionLink(root,'항목 생성·편집은 Bitwarden에서','https://vault.bitwarden.com/');return}
+ const form=el('form',undefined,'vault-connect-form');root.append(form);
+ form.append(el('p','기존 CLI 계정을 사용해 잠금을 해제합니다. 보관 항목을 만들거나 수정하는 작업은 Bitwarden에서 진행하세요.','hint'));
+ const password=field(form,'마스터 비밀번호','',null,()=>{},'vault-master','password');password.autocomplete='current-password';
+ const first=el('details');first.append(el('summary','처음 CLI에 로그인할 때 · 개인 API 키'));form.append(first);
+ const client=field(first,'client_id','',null,()=>{},'vault-client-id');client.placeholder='user.…';client.autocomplete='off';
+ const secret=field(first,'client_secret','',null,()=>{},'vault-client-secret','password');secret.autocomplete='off';
+ instructionLink(first,'Bitwarden에서 개인 API 키 확인','https://bitwarden.com/help/personal-api-key/');
+ const submit=button(secretFlow.status?.connected?'다시 연결':'잠금 해제하고 연결',()=>{},'btn primary');submit.type='submit';submit.disabled=secretFlow.busy||snapshot.design_preview;form.append(submit);
+ form.onsubmit=event=>{event.preventDefault();if(secretFlow.busy||snapshot.design_preview)return;const request={action:'unlock_ui',password:password.value,client_id:client.value,client_secret:secret.value};password.value=client.value=secret.value='';flowAction(request).finally(()=>{request.password=request.client_id=request.client_secret=''})};
+ const more=el('details',undefined,'control-more');more.append(el('summary','연결 옵션 · 터미널 연결'));root.append(more);flowTerminalVault(more);
+ instructionLink(root,'항목 생성·편집은 Bitwarden에서','https://vault.bitwarden.com/');
+}
+function flowTerminalVault(root){
  const box=flowStep(root,'','Bitwarden 연결','로그인 정보는 터미널에서 입력합니다. 대시보드 연결 유지 시간은 아래에서 설정합니다. 세션 값은 브라우저나 파일에 저장하지 않습니다.');
  const status=secretFlow.status;
  box.append(badge(status?.connected?'저장소 연결됨 · '+Math.ceil(status.expires_in/60)+'분 남음':status?.pending?'터미널 연결 대기 중':'저장소 연결 필요',status?.connected?'green':'amber'));
@@ -48,18 +65,19 @@ function flowReference(item,purpose,username=null){
 function flowConnectionRecords(kind){return draft.connections.filter(c=>kind==='ssh'?c.method==='ssh':c.kind==='git'&&(c.method==='https'||c.api.enabled)).map(c=>({id:c.id,title:c.name,lines:connectionLines(c)}));}
 
 function renderSecretSshWorkflow(){
- const root=$('page-body');root.replaceChildren();supplyHeader(root);
- const box=groupBox('등록된 SSH 키 한 번에 공급',root),rows=secretFlow.status?.registered_keys||[];
+ const root=$('page-body');root.replaceChildren();supplyHeader(root);const layout=el('div',undefined,'control-layout'),main=el('section'),aside=el('aside');layout.append(main,aside);root.append(layout);
+ const box=groupBox('등록된 SSH 키 한 번에 공급',main),rows=secretFlow.status?.registered_keys||[];
  box.append(el('p','bws처럼 저장된 목록의 키를 모두 가져와 SSH agent에 넣습니다. 기존 bws 등록도 자동으로 포함하며 접속 설정은 바꾸지 않습니다.','hint'));
- field(box,'새로 공급하는 키 유지 시간 · 초',draft.session.keyLifetime,null,value=>{draft.session.keyLifetime=Number(value);mark()},'key-lifetime','number');
- box.append(el('p','60~86400초. 이미 agent에 있는 같은 키는 재사용하고 기존 유지 시간은 바꾸지 않습니다. 목록·시간의 변경은 변경 검토에서 저장합니다.','hint'));
- box.append(flowButton('등록된 키 모두 공급',()=>({action:'supply_all',lifetime:draft.session.keyLifetime}),()=>{},!rows.length||!secretFlow.status?.connected));
+ const options=el('details',undefined,'control-more');options.append(el('summary','공급 옵션 · 키 유지 시간'));box.append(options);
+ field(options,'새로 공급하는 키 유지 시간 · 초',draft.session.keyLifetime,null,value=>{draft.session.keyLifetime=Number(value);mark()},'key-lifetime','number');
+ options.append(el('p','60~86400초. 이미 agent에 있는 같은 키는 재사용하고 기존 유지 시간은 바꾸지 않습니다. 목록·시간의 변경은 변경 검토에서 저장합니다.','hint'));
+ const supply=flowButton('등록된 키 모두 공급',()=>({action:'supply_all',lifetime:draft.session.keyLifetime}),()=>{},!rows.length||!secretFlow.status?.connected);supply.classList.add('primary');box.append(supply);
  const result=secretFlow.status?.last_supply;
- if(result){const report=groupBox('최근 공급 결과',root);for(const row of result.results)report.append(el('p',row.item+' · '+({added:'공급 완료',reused:'이미 agent에 있음 · 재사용',failed:'공급 실패'})[row.state],row.state==='failed'?'notice':'tool-state'));
+ if(result){const report=groupBox('최근 공급 결과',main);for(const row of result.results)report.append(el('p',row.item+' · '+({added:'공급 완료',reused:'이미 agent에 있음 · 재사용',failed:'공급 실패'})[row.state],row.state==='failed'?'notice':'tool-state'));
   report.append(el('p','agent 소켓: '+result.agent_socket,'hint'));
   if(result.dedicated_agent)report.append(el('p','기존 agent가 없어 별도 agent를 사용했습니다. 이 agent를 쓸 터미널에서 아래 명령을 실행하세요. SSH 연결 설정은 자동 변경하지 않습니다.','hint'),el('pre','export SSH_AUTH_SOCK='+"'"+result.agent_socket.replaceAll("'","'\"'\"'")+"'",'long-pre'));
  }
- const list=groupBox('등록된 키',root);
+ const list=groupBox('등록된 키 · '+rows.length+'개',aside);
  for(const row of rows){const card=el('article',undefined,'auth-link-card');card.append(el('strong',row.name),el('p',row.kind==='sshkey'?'SSH Key':'Secure Note','hint'),el('p',row.sources.join(' · '),'hint'));list.append(card)}
  if(!rows.length)list.append(el('p','저장된 공급 키가 없습니다. 아래에서 키를 추가하세요.','hint'));
  const pending=draft.credentials.filter(ref=>ref.source==='bitwarden'&&secretPurpose(ref)==='ssh-key'&&!rows.some(row=>row.item===ref.item&&row.kind===ref.kind));
@@ -69,8 +87,8 @@ function renderSecretSshWorkflow(){
  if(secretFlow.key){const key=secretFlow.key,details=groupBox('선택한 키',add);details.append(el('strong',key.name),el('p',key.fingerprint,'hint'));
   details.append(button('공급 목록에 추가',()=>{flowReference(key,'ssh-key');mark();renderSecretFlow();toast('공급 목록 초안에 추가했습니다. 변경 검토에서 저장하세요.')},'btn'));
  }
- const cleanup=groupBox('이번 작업의 키 해제',root);cleanup.append(flowButton('이번에 추가한 agent 키만 해제',{action:'cleanup'}),el('p','이 대시보드가 agent에 추가한 키만 해제합니다. Bitwarden 원본·공개키 파일·기존 agent 키·SSH 연결 설정은 유지합니다.','hint'));
- const edit=el('details',undefined,'group');edit.append(el('summary','저장한 공급 목록 수정'));root.append(edit);renderSecretInventory(edit,'ssh-key');
+ const cleanup=el('details',undefined,'control-more');cleanup.append(el('summary','작업 종료 · 이번에 공급한 키 해제'));root.append(cleanup);cleanup.append(flowButton('이번에 추가한 agent 키만 해제',{action:'cleanup'}),el('p','이 대시보드가 agent에 추가한 키만 해제합니다. Bitwarden 원본·공개키 파일·기존 agent 키·SSH 연결 설정은 유지합니다.','hint'));
+ renderSecretInventory(root,'ssh-key');
  root.append(el('p','SSH 접속 대상·사용자·공개키 경로·연결별 키 선택은 Git 또는 원격 접속에서 관리합니다.','hint'),button('Git 설정 →',()=>navigate('connections'),'quiet'),button('원격 접속 설정 →',()=>navigate('servers'),'quiet'));
 }
 function renderSecretTokenWorkflow(){
@@ -78,6 +96,7 @@ function renderSecretTokenWorkflow(){
  const saved=groupBox('등록된 환경변수 공급',root),refs=draft.credentials.filter(ref=>ref.deliveryVariable);
  for(const ref of refs){const card=el('article',undefined,'auth-link-card');card.append(el('strong',ref.deliveryVariable),el('p','Bitwarden 항목: '+ref.item,'hint'));
   field(card,'공급할 환경변수 이름',ref.deliveryVariable,null,value=>{ref.deliveryVariable=value;mark()},'delivery-'+ref.id).placeholder='예: GITHUB_TOKEN 또는 API_KEY';
+  if(['GH_TOKEN','GITHUB_TOKEN'].includes(ref.deliveryVariable))card.append(el('p','이 참조는 Bitwarden 연결 중 대시보드의 GitHub 관리 모듈 설치에도 사용합니다. Git 전역 인증은 바꾸지 않습니다.','hint'));
   card.append(el('pre',snapshot.secret_supply_command+' --reference '+ref.id+' -- PROGRAM ARGUMENTS','long-pre'));saved.append(card);
  }
  if(!refs.length)saved.append(el('p','등록된 환경변수 공급이 없습니다. 아래에서 항목과 변수 이름을 지정하세요.','hint'));
@@ -92,8 +111,7 @@ function renderSecretTokenWorkflow(){
 function validDeliveryVariable(value){return /^[A-Z_][A-Z0-9_]*$/.test(value)&&!(/^(BW_|DOTFILES_|SSH_|GIT_|LD_|DYLD_|PYTHON|NODE_|BASH|ZSH)/).test(value)&&!['PATH','HOME','CODEX_HOME','SHELL','USER','PWD','OLDPWD','ENV','IFS','TMPDIR'].includes(value)}
 function renderBitwardenSettings(){
  const root=$('page-body');root.replaceChildren();flowVault(root);
- const box=groupBox('대시보드 연결 유지 시간',root);
+ const box=el('details',undefined,'control-more');box.append(el('summary','연결 유지 시간 · 고급 설정'));root.append(box);
  field(box,'다음 연결부터 유지할 시간',String(secretFlow.status?.connection_minutes||15),[['5','5분'],['15','15분'],['30','30분'],['60','60분']],value=>flowAction({action:'set_connection_lifetime',minutes:Number(value)}),'vault-connection-lifetime');
- box.append(el('p','Bitwarden CLI 계정·서버·잠금 정책을 바꾸지 않습니다. 이 대시보드가 세션을 메모리에 유지할 시간이며 변경은 다음 연결부터 적용됩니다. SSH agent의 키 유지 시간과 별개입니다.','hint'));
- const account=groupBox('기존 Bitwarden CLI 설정 사용',root);account.append(el('p','현재 CLI의 계정과 서버 설정을 그대로 사용합니다. 로그인·잠금 해제는 선택한 터미널에서 직접 실행합니다. 대시보드 연결을 해제해도 CLI 로그아웃이나 이미 공급한 SSH 키 해제는 하지 않습니다.','hint'));
+ box.append(el('p','대시보드가 세션을 메모리에 유지할 시간입니다. 변경은 다음 연결부터 적용하며 Bitwarden 자체 잠금 정책·SSH agent 키 수명은 바꾸지 않습니다.','hint'));
 }

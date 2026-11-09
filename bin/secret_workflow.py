@@ -175,6 +175,35 @@ class Workflow:
         self.forget();self.session=session;self.generation=secrets.token_hex(8);self.expires=time.monotonic()+self.connection_lifetime()*60
         self.session_timer=threading.Timer(self.connection_lifetime()*60,self.expire);self.session_timer.daemon=True;self.session_timer.start()
         return dict(connected=True)
+    def github_install_environment(self):
+        refs=[ref for ref in cfg.read_settings()[0]['credentials'] if ref.get('purpose')=='token' and ref.get('deliveryVariable') in ('GITHUB_TOKEN','GH_TOKEN') and ref.get('source')=='bitwarden']
+        if not refs:return {}
+        if len(refs)!=1:raise ValueError('GitHub 설치용 토큰 참조를 하나만 지정하세요.')
+        ref=refs[0];value=read_bitwarden(ref['item'],ref['kind'],self.vault_run)
+        try:
+            if not value or len(value)>65536 or any(c in value for c in ('\n','\r','\0')):raise ValueError('설치용 GitHub 토큰 형식 오류')
+            encoded=__import__('base64').b64encode(('x-access-token:'+value).encode()).decode()
+            return {'GIT_CONFIG_COUNT':'1','GIT_CONFIG_KEY_0':'http.https://github.com/.extraheader','GIT_CONFIG_VALUE_0':'Authorization: Basic '+encoded}
+        finally:del value
+    def unlock_ui(self,password,client_id='',client_secret=''):
+        if not isinstance(password,str) or not 1<=len(password)<=4096 or any(not isinstance(v,str) or len(v)>4096 for v in (client_id,client_secret)):raise ValueError('Bitwarden 입력을 확인하세요.')
+        env=dict(os.environ);env.pop('BITWARDENCLI_DEBUG',None);env.pop('BW_SESSION',None)
+        try:
+            probe=self.run(['bw','status'],env=env);status=json.loads(probe.stdout).get('status')
+            if status=='unauthenticated':
+                if not client_id or not client_secret:raise ValueError('처음 CLI 로그인에는 Bitwarden 개인 API 키가 필요합니다. Bitwarden 계정 설정에서 확인하세요.')
+                env.update(BW_CLIENTID=client_id,BW_CLIENTSECRET=client_secret)
+                login=self.run(['bw','login','--apikey','--nointeraction'],env=env)
+                env.pop('BW_CLIENTID',None);env.pop('BW_CLIENTSECRET',None)
+                if login.returncode:raise ValueError('Bitwarden 로그인에 실패했습니다. 계정·API 키·서버 설정을 확인하세요.')
+            env['DOTFILES_VAULT_PASSWORD']=password
+            unlocked=self.run(['bw','unlock','--raw','--passwordenv','DOTFILES_VAULT_PASSWORD','--nointeraction'],env=env)
+            if unlocked.returncode:raise ValueError('잠금을 해제하지 못했습니다. 비밀번호와 CLI 계정을 확인하세요.')
+            session=unlocked.stdout.strip();self.ticket=secrets.token_urlsafe(32);self.ticket_until=time.monotonic()+30
+            return self.attach(self.ticket,session)
+        except (OSError,TypeError,KeyError,json.JSONDecodeError):raise ValueError('Bitwarden 연결을 완료하지 못했습니다.') from None
+        finally:
+            env.clear();password=client_id=client_secret=''
     def expire(self):
         with self.lock:
             if time.monotonic()>=self.expires:self.forget()
@@ -286,8 +315,9 @@ class Workflow:
         with self.lock:
             if self.closed:raise ValueError('대시보드가 종료 중입니다.')
             action=request.get('action')
-            allowed={'supply_all':{'lifetime'},'set_connection_lifetime':{'minutes'},'status':set(),'set_terminal':{'terminal'},'connect':{'launch'},'search':{'query','purpose'},'prepare_registered':{'registration'},'prepare_saved':{'connection'},'prepare_public':{'item'},'save_public':{'id','path'},'supply_key':{'id','lifetime'},'check_token':{'item'},'cleanup':set(),'disconnect':set()}
+            allowed={'unlock_ui':{'password','client_id','client_secret'},'supply_all':{'lifetime'},'set_connection_lifetime':{'minutes'},'status':set(),'set_terminal':{'terminal'},'connect':{'launch'},'search':{'query','purpose'},'prepare_registered':{'registration'},'prepare_saved':{'connection'},'prepare_public':{'item'},'save_public':{'id','path'},'supply_key':{'id','lifetime'},'check_token':{'item'},'cleanup':set(),'disconnect':set()}
             if action not in allowed or set(request)-{'action'}!=allowed[action]:raise ValueError('지원하지 않는 비밀 관리 요청입니다.')
+            if action=='unlock_ui':return self.unlock_ui(request['password'],request['client_id'],request['client_secret'])
             if action=='supply_all':return self.supply_all(request['lifetime'])
             if action=='set_connection_lifetime':return self.set_connection_lifetime(request['minutes'])
             if action=='status':return self.status()

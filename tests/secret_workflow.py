@@ -175,6 +175,35 @@ else:sys.exit(9)
   for variable in ['PATH','BW_SESSION','SSH_AUTH_SOCK','LD_PRELOAD','NODE_OPTIONS']:
    state['credentials'][0]['deliveryVariable']=variable
    with self.assertRaises(ValueError):cfg.validate(state)
+ def test_ui_unlock_keeps_passwords_out_of_arguments_files_and_response(self):
+  calls=[]
+  def run(args,**kw):
+   calls.append((args,dict(kw.get('env',{}))))
+   if args[:2]==['bw','status']:return subprocess.CompletedProcess(args,0,json.dumps(dict(status='unlocked' if kw.get('env',{}).get('BW_SESSION') else 'locked')),'')
+   if args[:2]==['bw','unlock']:return subprocess.CompletedProcess(args,0,'synthetic-session-123456','')
+   return subprocess.CompletedProcess(args,0,'','')
+  with patch.object(self.workflow,'run',side_effect=run):result=self.workflow.unlock_ui('synthetic-master')
+  self.assertTrue(result['connected']);self.assertNotIn('synthetic-master',json.dumps(result));self.assertNotIn('synthetic-master',json.dumps([args for args,env in calls]));self.assertEqual(next(env for args,env in calls if args[:2]==['bw','unlock'])['DOTFILES_VAULT_PASSWORD'],'synthetic-master')
+  self.assertFalse(cfg.DATA.exists())
+ def test_ui_first_login_uses_environment_and_does_not_forward_api_secret_to_unlock(self):
+  calls=[]
+  def run(args,**kw):
+   env=dict(kw.get('env',{}));calls.append((args,env))
+   if args[:2]==['bw','status']:return subprocess.CompletedProcess(args,0,json.dumps(dict(status='unlocked' if env.get('BW_SESSION') else 'unauthenticated')),'')
+   return subprocess.CompletedProcess(args,0,'synthetic-session-123456' if args[:2]==['bw','unlock'] else '','')
+  with patch.object(self.workflow,'run',side_effect=run):self.workflow.unlock_ui('synthetic-master','synthetic-client-id','synthetic-api-secret')
+  login=next(env for args,env in calls if args[:2]==['bw','login']);unlock=next(env for args,env in calls if args[:2]==['bw','unlock'])
+  self.assertEqual(login['BW_CLIENTSECRET'],'synthetic-api-secret');self.assertNotIn('BW_CLIENTSECRET',unlock);self.assertNotIn('synthetic-api-secret',json.dumps([args for args,env in calls]))
+ def test_saved_github_install_token_is_not_a_global_credential_change(self):
+  self.connect();cfg.DATA.mkdir(parents=True,exist_ok=True);state=cfg.defaults();state['credentials']=[dict(id='github-install',purpose='token',source='bitwarden',kind='note',item='token-1234',variable='',helper='cache',username='',deliveryVariable='GITHUB_TOKEN')];cfg.SETTINGS.write_text(json.dumps(state));before=cfg.SETTINGS.read_bytes()
+  result=self.workflow.github_install_environment();self.assertTrue(result['GIT_CONFIG_VALUE_0'].startswith('Authorization: Basic '));self.assertEqual(cfg.SETTINGS.read_bytes(),before);self.assertNotIn(self.token,json.dumps(self.workflow.status()));self.assertNotIn('GIT_CONFIG_VALUE_0',os.environ)
+  self.workflow.forget()
+  with self.assertRaises(ValueError):self.workflow.github_install_environment()
+ def test_ui_unlock_failure_never_echoes_provider_output(self):
+  def run(args,**kw):return subprocess.CompletedProcess(args,0,json.dumps(dict(status='locked')),'') if args[:2]==['bw','status'] else subprocess.CompletedProcess(args,1,'SENSITIVE-PROVIDER-OUTPUT','SENSITIVE-PROVIDER-OUTPUT')
+  with patch.object(self.workflow,'run',side_effect=run):
+   with self.assertRaises(ValueError) as error:self.workflow.unlock_ui('synthetic-master')
+  self.assertNotIn('SENSITIVE',str(error.exception));self.assertIsNone(self.workflow.session)
  def test_terminal_handoff_keeps_passwords_and_session_out_of_output(self):
   import secret_session,io,contextlib
   handoff=self.workflow.connect();request=Path(self.workflow.launch_dir.name)/'request.json'

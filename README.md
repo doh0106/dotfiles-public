@@ -1,7 +1,8 @@
 # dotfiles-public
 
 공개 설정 코드를 가져와 로컬 대시보드에서 필요한 기능을 고른다.
-대시보드는 설정 파일과 실행 안내를 만들고, 사람 또는 AI가 안내를 실행한다.
+대시보드의 **내 환경**에서 선택한 설정을 저장하고 도구 설치·설정 적용·인증·업데이트를 진행한다.
+[대시보드 사용 순서](docs/dashboard-control-center.md)를 참고한다.
 설치·로그인·키 로드는 사용자가 선택한 때에만 진행한다.
 
 ## 시작하기
@@ -49,7 +50,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\apps\windows\Dotfiles.
 
 실행기는 저장소 위치를 기억하므로 폴더를 옮겼다면 설치 실행기를 다시 실행한다.
 앱 실행 자체는 프로그램 설치·configure·Bitwarden 로그인을 수행하지 않는다.
-계속 켜져 있는 터미널의 인증 세션을 앱에 전달하지 않으며, 인증은 기존 적용 안내를 따른다.
+계속 켜져 있는 터미널의 인증 세션을 앱에 자동 전달하지 않는다. Bitwarden은 대시보드에서 연결하고, SSH 키는 내 환경 또는 원격 접속 → SSH agent에서 공급한다.
 
 화면 아래 **앱 서버 종료**는 로컬 서버를 종료한다. 저장하지 않은 초안이 있으면 확인한다.
 아이콘을 여러 번 눌러도 같은 저장소의 앱 서버를 재사용한다. 창을 모두 닫거나 창에서 5분간
@@ -70,6 +71,7 @@ python3 bin/desktop.py stop
 사용할 checkout은 `~/personal/dotfiles` 하나로 유지한다. 셸·Git 설정은 이 checkout의 파일에
 연결하고, 대시보드에서 저장한 개인 선택은 `~/.config/dotfiles/dashboard/`에 별도로 보관한다.
 코드 변경은 이 checkout에서 커밋한 뒤 원격과 동기화한다. 다른 로컬 사본을 origin으로 연결하지 않는다.
+대시보드의 **내 환경 → 환경 코드 업데이트**에서 확인·가져오기·재시작할 수 있다. 아래는 수동 경로다.
 
 ```sh
 cd "$HOME/personal/dotfiles"

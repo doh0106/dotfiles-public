@@ -109,3 +109,14 @@ bridge = EnvironmentBridge(os.environ.get('ENVIRONMENT_CORE_ROOT') or locations.
     os.environ.get('DEV_ENVIRONMENT_ROOT') or locations.get('runtime_root'),
     os.environ.get('ENVIRONMENT_AGENT_KIT_ROOT') or locations.get('agent_kit_root'),
     None if os.environ.get('ENVIRONMENT_CORE_ROOT') else locations.get('core_digest'))
+
+
+def reload_registration():
+    """Refresh the same bridge after an explicit dashboard installation."""
+    registered=registered_locations()
+    if not registered:return
+    bridge.close()
+    bridge.core=Path(registered['core_root'])
+    bridge.runtime=Path(registered['runtime_root']) if registered['runtime_root'] else None
+    bridge.agent_kit=Path(registered['agent_kit_root']) if registered['agent_kit_root'] else None
+    bridge.digest=registered['core_digest']
