@@ -26,7 +26,7 @@ class Workflow:
     def __init__(self,origin):
         self.origin=origin;self.lock=threading.RLock();self.session=None;self.expires=0
         self.generation=None;self.ticket=None;self.ticket_until=0;self.launch_dir=None
-        self.items={};self.prepared={};self.agent_env=None;self.dedicated_socket=False;self.owned_pid=None;self.agent_dir=None;self.added={};self.closed=False;self.session_timer=None
+        self.items={};self.prepared={};self.agent_env=None;self.dedicated_socket=False;self.owned_pid=None;self.agent_dir=None;self.added={};self.last_supply=None;self.closed=False;self.session_timer=None
     def run(self,args,**kw):
         try:return subprocess.run(args,capture_output=True,text=True,timeout=30,**kw)
         except (OSError,subprocess.TimeoutExpired):raise ValueError('필요한 도구 실행에 실패했습니다. 설치·터미널 상태를 확인하세요.') from None
@@ -96,6 +96,50 @@ class Workflow:
         if matches:stored.update(path=matches[0]['path'],saved=True)
         stored['existing_connections']=[row['name'] for row in matches]
         return dict(stored)
+    def registered_keys(self):
+        rows={}
+        for row in legacy_secrets.registrations()['items']:
+            rows[(row['item'],row['kind'])]=dict(row)
+        state=cfg.read_settings()[0]
+        for ref in state['credentials']:
+            used=any(c['method']=='ssh' and c['credential']==ref['id'] for c in state['connections'])
+            if ref['source']!='bitwarden' or ref['kind'] not in ('note','sshkey') or not ref['item'] or not (ref.get('purpose')=='ssh-key' or not ref.get('purpose') and used):continue
+            key=(ref['item'],ref['kind'])
+            if key not in rows:rows[key]=dict(id=ref['id'],item=ref['item'],name=ref['item'],kind=ref['kind'],purpose='ssh-key',sources=[])
+            rows[key]['sources']=list(dict.fromkeys(rows[key]['sources']+[str(cfg.SETTINGS)]))
+        return list(rows.values())
+    def supply_all(self,lifetime):
+        if type(lifetime) is not int or not 60<=lifetime<=86400:raise ValueError('키 유지 시간은 60~86400초입니다.')
+        if not self.session or time.monotonic()>=self.expires:raise ValueError('Bitwarden 연결 설정에서 먼저 연결하세요.')
+        rows=self.registered_keys()
+        if not rows:raise ValueError('공급할 등록 키가 없습니다.')
+        env=self.agent();runner=lambda args,**kw:self.run(args,env=env,**kw);results=[]
+        for row in rows:
+            try:
+                added=auth.add(row['item'],row['kind'],lifetime,runner=runner,fetcher=lambda item,kind,private=False:read_bitwarden(item,kind,self.vault_run))
+                for key in added:self.added[key]=time.time()+lifetime
+                results.append(dict(item=row['item'],kind=row['kind'],state='added' if added else 'reused'))
+            except (ValueError,RuntimeError,OSError):
+                results.append(dict(item=row['item'],kind=row['kind'],state='failed',message='공급하지 못했습니다. 항목 형식·저장소 연결을 확인하세요.'))
+        self.last_supply=dict(results=results,agent_socket=env.get('SSH_AUTH_SOCK'),dedicated_agent=self.dedicated_socket)
+        return self.last_supply
+    def connection_lifetime(self):
+        try:
+            path=cfg.DATA/'vault-preferences.json';info=path.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_uid!=os.getuid() or info.st_size>4096:return 15
+            value=json.loads(path.read_text()).get('minutes',15)
+            return value if type(value) is int and 5<=value<=60 else 15
+        except (OSError,ValueError,TypeError,AttributeError):return 15
+    def set_connection_lifetime(self,minutes):
+        if type(minutes) is not int or not 5<=minutes<=60:raise ValueError('연결 유지 시간은 5~60분으로 지정하세요.')
+        cfg.DATA.mkdir(parents=True,exist_ok=True,mode=0o700)
+        descriptor,name=tempfile.mkstemp(dir=cfg.DATA,prefix='.vault-preferences-')
+        try:
+            with os.fdopen(descriptor,'w') as stream:json.dump(dict(minutes=minutes),stream)
+            os.replace(name,cfg.DATA/'vault-preferences.json')
+        finally:
+            if os.path.exists(name):os.unlink(name)
+        return dict(minutes=minutes)
     def status(self):
         if self.session and time.monotonic()>=self.expires:self.forget()
         for key,deadline in list(self.added.items()):
@@ -105,7 +149,7 @@ class Workflow:
             try:unlocked=not probe.returncode and json.loads(probe.stdout).get('status')=='unlocked'
             except (ValueError,TypeError):unlocked=False
             if not unlocked:self.forget()
-        return dict(legacy=legacy_secrets.registrations(),keys=self.key_status(),terminals=terminal_handoff.available(),default_terminal=terminal_handoff.settings(),generation=self.generation,connected=bool(self.session),expires_in=max(0,int(self.expires-time.monotonic())) if self.session else 0,
+        return dict(registered_keys=self.registered_keys(),last_supply=self.last_supply,connection_minutes=self.connection_lifetime(),legacy=legacy_secrets.registrations(),keys=self.key_status(),terminals=terminal_handoff.available(),default_terminal=terminal_handoff.settings(),generation=self.generation,connected=bool(self.session),expires_in=max(0,int(self.expires-time.monotonic())) if self.session else 0,
             pending=bool(self.ticket and time.monotonic()<self.ticket_until),installed={x:bool(shutil.which(x)) for x in ('bw','ssh-add','ssh-keygen','ssh-agent')},
             agent_socket=(self.agent_env or {}).get('SSH_AUTH_SOCK'),managed_keys=len(self.added),prepared=[dict(record) for record in self.prepared.values()])
     def connect(self,launch=False):
@@ -128,8 +172,8 @@ class Workflow:
         try:valid=json.loads(result.stdout).get('status')=='unlocked'
         except (ValueError,TypeError):valid=False
         if result.returncode or not valid:raise ValueError('잠금 해제된 Bitwarden 세션을 확인하지 못했습니다.')
-        self.forget();self.session=session;self.generation=secrets.token_hex(8);self.expires=time.monotonic()+900
-        self.session_timer=threading.Timer(900,self.expire);self.session_timer.daemon=True;self.session_timer.start()
+        self.forget();self.session=session;self.generation=secrets.token_hex(8);self.expires=time.monotonic()+self.connection_lifetime()*60
+        self.session_timer=threading.Timer(self.connection_lifetime()*60,self.expire);self.session_timer.daemon=True;self.session_timer.start()
         return dict(connected=True)
     def expire(self):
         with self.lock:
@@ -242,8 +286,10 @@ class Workflow:
         with self.lock:
             if self.closed:raise ValueError('대시보드가 종료 중입니다.')
             action=request.get('action')
-            allowed={'status':set(),'set_terminal':{'terminal'},'connect':{'launch'},'search':{'query','purpose'},'prepare_registered':{'registration'},'prepare_saved':{'connection'},'prepare_public':{'item'},'save_public':{'id','path'},'supply_key':{'id','lifetime'},'check_token':{'item'},'cleanup':set(),'disconnect':set()}
+            allowed={'supply_all':{'lifetime'},'set_connection_lifetime':{'minutes'},'status':set(),'set_terminal':{'terminal'},'connect':{'launch'},'search':{'query','purpose'},'prepare_registered':{'registration'},'prepare_saved':{'connection'},'prepare_public':{'item'},'save_public':{'id','path'},'supply_key':{'id','lifetime'},'check_token':{'item'},'cleanup':set(),'disconnect':set()}
             if action not in allowed or set(request)-{'action'}!=allowed[action]:raise ValueError('지원하지 않는 비밀 관리 요청입니다.')
+            if action=='supply_all':return self.supply_all(request['lifetime'])
+            if action=='set_connection_lifetime':return self.set_connection_lifetime(request['minutes'])
             if action=='status':return self.status()
             if action=='set_terminal':return terminal_handoff.save(request['terminal'])
             if action=='connect':return self.connect(request['launch'] is True)

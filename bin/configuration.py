@@ -118,6 +118,10 @@ def connection_refs(connection):
     if connection['api']['enabled']:refs.append(connection['api']['credential'])
     return [ref for ref in refs if ref]
 
+DELIVERY_RESERVED={'PATH','HOME','CODEX_HOME','SHELL','USER','PWD','OLDPWD','ENV','IFS','TMPDIR'}
+def valid_delivery_variable(value):
+    return isinstance(value,str) and re.fullmatch('[A-Z_][A-Z0-9_]*',value) is not None and value not in DELIVERY_RESERVED and not value.startswith(('BW_','DOTFILES_','SSH_','GIT_','LD_','DYLD_','PYTHON','NODE_','BASH','ZSH'))
+
 def validate(state):
     if not isinstance(state,dict) or set(state)!={'schema','features','git','profiles','connections','credentials','session'} or state['schema']!=SCHEMA:raise ValueError('설정 버전/최상위 항목이 올바르지 않습니다. 화면을 새로고침하세요.')
     features.validate(state['features'])
@@ -145,7 +149,7 @@ def validate(state):
         required={'id','source','kind','item','variable','helper','username'}
         if not required<=set(c) or set(c)-required-{'purpose','deliveryVariable'}:raise ValueError('인증 참조 항목 형식 오류')
         string(c.get('deliveryVariable',''),'토큰 공급 환경변수')
-        if c.get('deliveryVariable') and (c.get('purpose')!='token' or not re.fullmatch('[A-Z][A-Z0-9_]*_TOKEN',c['deliveryVariable'])):raise ValueError('공급 대상 환경변수는 SERVICE_TOKEN처럼 지정하세요.')
+        if c.get('deliveryVariable') and (c.get('purpose')!='token' or not valid_delivery_variable(c['deliveryVariable'])):raise ValueError('공급 환경변수는 API_KEY처럼 지정하세요. 시스템·인증 제어 변수는 사용할 수 없습니다.')
         if c.get('purpose','token') not in ('ssh-key','token','password'):raise ValueError('비밀 항목 용도 오류')
         if c.get('purpose')=='password' and (c['source']!='bitwarden' or c['kind'] not in ('note','login')):raise ValueError('일반 비밀번호는 비밀 저장소의 Login 또는 Secure Note를 참조하세요.')
         for key in ('source','kind','item','variable','helper','username'):string(c[key],'인증 참조 '+key)

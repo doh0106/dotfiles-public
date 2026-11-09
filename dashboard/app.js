@@ -108,8 +108,10 @@ function formSection(parent,title,description){const section=el('section',undefi
 function sshMode(c){return c?.sshMode||'key'}
 function openConnection(c){navigate(c.kind==='git'?'connections':'servers',{primary:true});chosen=c.id;inspector='connection';renderConnections();}
 function authSummary(parent,c,role='git'){
- const ref=credentialOf(role==='api'?c.api.credential:c.credential),system=role==='git'&&c.method==='ssh'&&sshMode(c)==='system';
- parent.append(el('p',system?'인증: 기존 OpenSSH 설정에 맡김 · 키·토큰 등록 불필요':ref?'연동된 인증정보: '+ref.id+' · 인증 준비·접속 성공은 별도 확인':role==='git'?'인증정보 연동 없음 · 기존 agent 또는 HTTPS 인증 도구 사용':'API 토큰을 비밀 관리의 공급·연동에서 연결하세요.','field-description'),button('비밀 관리 · 공급·연동 →',()=>navigate('secret-links',{primary:true}),'quiet'));
+ const system=role==='git'&&c.method==='ssh'&&sshMode(c)==='system';
+ if(system){parent.append(el('p','기존 OpenSSH 설정을 사용합니다. 공급된 키 선택과 서버 접속은 OpenSSH가 처리합니다.','field-description'));return}
+ recordChoiceField(parent,role==='api'?'API 도구 인증정보':c.method==='ssh'?'SSH 키 참조 · 선택':'HTTPS 인증정보 · 선택',role==='api'?c.api.credential:c.credential,()=>credentialRecords(c,role),value=>{if(role==='api')c.api.credential=value;else c.credential=value;mark();renderInspector()},'connection-auth-'+role,'기존 인증 방식 사용');
+ parent.append(button(c.method==='ssh'&&role==='git'?'SSH 키 공급 →':'비밀 관리 →',()=>navigate(c.method==='ssh'&&role==='git'?'secrets':'secret-tokens',{primary:true}),'quiet'));
 }
 function knownGitSshHost(c){return c.kind==='git'&&/^(github\.com|gitlab\.com)(:\d+)?$/i.test(c.host.trim());}
 function reuseKeyPath(c,parent){
@@ -289,38 +291,10 @@ function renderSecretInventory(parent,purpose){
   body.append(button('등록 삭제',()=>{if(uses.length){toast('연결에서 연동을 해제한 뒤 삭제하세요.');return}draft.credentials=draft.credentials.filter(c=>c.id!==ref.id);mark();renderSecretFlow()},'quiet danger'));
  }
 }
-function renderSecretLinks(){
- const root=$('page-body');root.replaceChildren();explanation(root,'비밀을 사용하는 기능','SSH 키 로드, HTTPS Git 인증, PR·이슈 도구 토큰 공급을 여기서 연결합니다. 저장소는 비밀을 보관하고, 각 기능은 어떤 항목을 언제 사용할지 결정합니다. 선택·저장만으로 공급하거나 서버에 키를 등록하지 않습니다.');
- const links=groupBox('연결별 인증정보 연동',root);
- if(!draft.connections.length)links.append(el('p','연결을 만든 뒤 필요한 경우에만 인증정보를 연동하세요. 키·토큰 항목을 먼저 등록해도 됩니다.','hint'));
- for(const c of draft.connections){
-  const row=el('section',undefined,'auth-link-card');row.append(el('h3',c.name),el('p',c.host+' · '+c.method.toUpperCase()+' · '+(c.enabled?'사용 설정됨':'사용 꺼짐'),'hint'));
-  if(c.method==='ssh'&&sshMode(c)==='system'){
-   row.append(el('p','기존 SSH 설정 사용 · 별도 키 연동 없이 OpenSSH에 맡깁니다.','tool-state'));
-   if(c.credential)row.append(el('p','보존된 이전 연동: '+c.credential+' · 현재 사용하지 않음','hint'),button('이전 연동 해제',()=>{c.credential='';mark();renderSecretLinks()},'quiet'));
-  }else{
-   recordChoiceField(row,c.method==='ssh'?'공급받을 SSH 키':'HTTPS 인증정보',c.credential,()=>credentialRecords(c,'git'),value=>{c.credential=value;mark();renderSecretLinks()},'auth-'+c.id+'-git',c.method==='ssh'?'연동하지 않음 · 기존 agent의 지정 키 사용':'연동하지 않음 · 기존 Git 인증 도구 사용');
-   if(c.method==='ssh')row.append(el('p','공개키: '+(c.publicKey||'미지정 · 연결 설정에서 입력하세요.'),'hint'));
-   const ref=credentialOf(c.credential);if(ref&&!compatible(ref.source,'git',c))row.append(el('p','현재 접속 방식에서 사용할 수 없는 인증정보입니다. 연동을 변경하세요.','field-error'));
-  }
-  if(c.api.enabled)recordChoiceField(row,'PR·이슈 도구 토큰',c.api.credential,()=>credentialRecords(c,'api'),value=>{c.api.credential=value;mark();renderSecretLinks()},'auth-'+c.id+'-api','토큰 연동 안 함');
-  row.append(button('접속 설정 열기 →',()=>openConnection(c),'quiet'));links.append(row);
- }
-}
-function renderProviders(){
- const root=$('page-body');root.replaceChildren();flowVault(root);
- explanation(root,'비밀 저장소','Bitwarden은 키·토큰·비밀번호를 보관하는 저장소입니다. SSH 등록이나 토큰 공급은 공급·연동에서 관리합니다. 저장소를 바꾸더라도 접속 설정은 그대로 두고 항목의 보관 위치를 바꿀 수 있습니다.');
- const box=groupBox('Bitwarden',root),refs=draft.credentials.filter(ref=>ref.source==='bitwarden');
- box.append(el('p','보관 항목 참조 '+refs.length+'개 · '+(refs.map(ref=>ref.id).join(', ')||'등록 없음'),'tool-state'),el('p','CLI 설치·로그인·잠금 해제가 필요합니다. 데스크톱 앱과 CLI의 로그인 상태는 별개이며 실제 vault 상태는 자동 조회하지 않습니다.','hint'),el('pre','bw status\n# unauthenticated이면 bwl\n# locked이면 bwu','long-pre'));
- instructionLink(box,'Bitwarden CLI 설치 안내','https://bitwarden.com/help/cli/');box.append(button('관리할 항목 보기 →',()=>navigate('secrets'),'quiet'));
- const existing=groupBox('기존 인증 도구와 환경',root);existing.append(el('p','SSH agent와 Git credential helper는 기존 인증 절차에 맡길 때 사용합니다. 환경변수는 API 토큰을 전달하는 경로입니다. 비밀 저장소와 역할이 다릅니다.','hint'),el('p','현재 서버 프로세스의 SSH agent: '+snapshot.auth_status.agent,'tool-state'),button('공급·연동 보기 →',()=>navigate('secret-links'),'quiet'));
-}
-
-function renderSessions(){
- const root=$('page-body');root.replaceChildren();const body=groupBox('SSH agent의 키 수명',root);field(body,'새 키 TTL · 초 (60~86400)',draft.session.keyLifetime,null,v=>{draft.session.keyLifetime=Number(v);mark()},'session-ttl','number');explanation(body,'새로 로드하는 키에만 적용','이미 agent에 있던 키의 수명은 바꾸지 않습니다. 기존 agent에 맡긴 키의 수명과 잠금 정책도 해당 공급자가 관리합니다.');
- const cleanup=groupBox('작업 종료와 인증정보 정리',root);cleanup.append(el('pre','bwe','long-pre'));explanation(cleanup,'이 셸이 추가한 키와 알려진 세션 변수 정리','공유 agent의 기존 키는 보존합니다. 직접 만든 agent도 비어 있을 때만 종료합니다. 도달할 수 없는 agent는 정리 기록을 남겨 다시 시도할 수 있게 합니다.');explanation(cleanup,'서버의 토큰 만료·폐기는 별도','토큰은 공급자에서 읽어 명령마다 전달합니다. 메모리에서 없애는 동작이 GitHub·GitLab의 토큰을 폐기하지는 않습니다. 외부 helper·사용자 지정 환경변수는 해당 공급자 정책을 확인하세요.');
- const status=groupBox('현재 조회 범위',root);status.append(el('p','SSH agent: '+snapshot.auth_status.agent,'tool-state'),el('p','Bitwarden vault: '+snapshot.auth_status.vault,'tool-state'),el('p',snapshot.auth_status.scope,'hint'),button('설치·서버 상태 다시 확인',refreshMetadata));
-}
+// Compatibility entry points; supply and connection settings have separate owners.
+function renderSecretLinks(){navigate('connections',{primary:true})}
+function renderProviders(){renderBitwardenSettings()}
+function renderSessions(){navigate('secrets',{primary:true})}
 function planText(plan){
  const lines=['dotfiles 설정 적용 안내','활성화된 설정에 필요한 단계만 포함합니다. 설치된 도구는 재설치하지 마세요.','조건별 명령을 한꺼번에 실행하지 마세요. 로그인·2FA는 사용자에게 맡기고, 해당 상태의 분기만 실행하세요.','예시 clone의 OWNER/REPO와 대상 경로는 실제 값으로 바꾼 뒤 실행하세요.',''];
  for(const [index,stage] of plan.workflow.entries()){
@@ -371,7 +345,7 @@ function connectionFiles(files,c){
  return selected;
 }
 function renderConnectionAdvanced(body,c){
- body.append(button('공통 인증 준비·키 정책 →',()=>navigate('sessions',{primary:true}),'quiet'));
+ body.append(button('SSH 키 공급·유지 시간 →',()=>navigate('secrets',{primary:true}),'quiet'));
  const details=el('details');details.append(el('summary','이 연결에 적용될 설정 파일 보기'));const content=el('div');details.append(content);body.append(details);
  content.append(el('p',c.profile?'폴더 규칙을 공유하는 연결은 같은 설정 파일을 사용합니다. 아래 파일에 함께 포함될 수 있습니다.':'이 연결의 Git·SSH 설정만 표시합니다. 전체 파일은 변경 검토·적용에서 확인하세요.','hint'));
  const showPreview=async()=>{const state=JSON.stringify(draft);try{const data=await api('/api/preview',draft);if(state!==JSON.stringify(draft)){toast('초안이 바뀌었습니다. 다시 미리보기를 실행하세요.');return}content.replaceChildren();content.append(el('p',c.profile?'공유 폴더 규칙의 설정 파일입니다. 같은 규칙을 쓰는 다른 연결이 포함될 수 있습니다.':'이 연결에 해당하는 설정입니다.','hint'));renderFiles(content,connectionFiles(data.files,c),'draft',showPreview);}catch(e){toast(e.message)}};

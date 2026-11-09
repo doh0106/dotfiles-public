@@ -151,6 +151,30 @@ else:sys.exit(9)
    ident=legacy_secrets.registrations()['items'][0]['id'];result=self.workflow.dispatch(dict(action='prepare_registered',registration=ident));self.assertTrue(result['saved']);self.assertEqual(result['path'],str(self.home/'fixture.pub'));self.assertEqual(result['existing_connections'],['original-alias']);self.assertEqual((self.home/'fixture.pub').stat().st_mtime_ns,before)
    (self.home/'fixture.pub').write_text('ssh-ed25519 DIFFERENT');result=self.workflow.prepare_registered(ident);self.assertFalse(result['saved']);self.assertEqual(result['existing_connections'],[])
   with self.assertRaises(ValueError):self.workflow.prepare_registered('not-in-manifest')
+ def test_batch_supply_merges_registrations_and_preserves_existing_agent_keys(self):
+  manifest=self.home/'secrets.json';manifest.write_text(json.dumps(dict(secrets=[dict(bw_name='key-1234',bw_type='sshkey',action='ssh-add'),dict(bw_name='broken',bw_type='note',action='ssh-add')])))
+  state=cfg.defaults();state['credentials']=[dict(id='saved-key',purpose='ssh-key',source='bitwarden',kind='sshkey',item='key-1234',variable='',helper='cache',username='')];cfg.DATA.mkdir(parents=True,exist_ok=True);cfg.SETTINGS.write_text(json.dumps(state))
+  self.connect()
+  with patch.dict(os.environ,DOTFILES_SECRETS_MANIFEST=str(manifest)):
+   self.assertEqual(len(self.workflow.registered_keys()),2)
+   first=self.workflow.dispatch(dict(action='supply_all',lifetime=60));self.assertEqual([r['state'] for r in first['results']],['added','failed']);self.assertNotIn(self.token,json.dumps(first))
+   deadline=dict(self.workflow.added);again=self.workflow.supply_all(120);self.assertEqual(again['results'][0]['state'],'reused');self.assertEqual(deadline,self.workflow.added)
+   self.assertFalse((self.home/'.ssh').exists());self.assertFalse((self.home/'keys').exists());self.assertEqual(json.loads(cfg.SETTINGS.read_text()),state)
+  self.workflow.cleanup();self.assertEqual(subprocess.run(['ssh-add','-l'],env=self.workflow.agent_env,capture_output=True).returncode,1)
+ def test_dashboard_connection_lifetime_is_separate_from_key_policy(self):
+  self.assertEqual(self.workflow.connection_lifetime(),15);self.workflow.set_connection_lifetime(5);self.assertEqual(self.workflow.connection_lifetime(),5)
+  before=time.monotonic();self.connect();self.assertTrue(before+299<=self.workflow.expires<=time.monotonic()+300)
+  expiry=self.workflow.expires;self.workflow.set_connection_lifetime(30);self.assertEqual(expiry,self.workflow.expires);self.assertEqual(cfg.defaults()['session']['keyLifetime'],3600)
+  with self.assertRaises(ValueError):self.workflow.set_connection_lifetime(0)
+  self.assertNotIn('synthetic-session', (cfg.DATA/'vault-preferences.json').read_text())
+ def test_environment_supply_accepts_api_key_and_strips_other_managed_variables(self):
+  cfg.DATA.mkdir(parents=True);state=cfg.defaults();base=dict(purpose='token',source='bitwarden',kind='note',item='token-1234',variable='',helper='cache',username='');state['credentials']=[dict(base,id='api-key',deliveryVariable='API_KEY'),dict(base,id='other',deliveryVariable='OTHER_SECRET')];cfg.SETTINGS.write_text(json.dumps(state));cfg.validate(state)
+  program=self.home/'client.py';program.write_text('import os,json;print(json.dumps(dict(selected=os.environ.get("API_KEY")=="synthetic-token-never-in-http",other="OTHER_SECRET" in os.environ,vault="BW_SESSION" in os.environ)))')
+  result=subprocess.run([sys.executable,str(cfg.REPO/'bin/secret_supply.py'),'--reference','api-key','--',sys.executable,str(program)],env=dict(os.environ,BW_SESSION='synthetic-session-123456',OTHER_SECRET='must-not-inherit'),capture_output=True,text=True)
+  self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(json.loads(result.stdout),dict(selected=True,other=False,vault=False))
+  for variable in ['PATH','BW_SESSION','SSH_AUTH_SOCK','LD_PRELOAD','NODE_OPTIONS']:
+   state['credentials'][0]['deliveryVariable']=variable
+   with self.assertRaises(ValueError):cfg.validate(state)
  def test_terminal_handoff_keeps_passwords_and_session_out_of_output(self):
   import secret_session,io,contextlib
   handoff=self.workflow.connect();request=Path(self.workflow.launch_dir.name)/'request.json'

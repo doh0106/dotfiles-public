@@ -15,13 +15,14 @@ def main():
     state=cfg.validate(cfg.read_settings()[0]);ref=next((ref for ref in state['credentials'] if ref['id']==args.reference),None)
     if not ref or ref.get('purpose')!='token':raise ValueError('저장한 토큰 참조를 선택하세요.')
     variable=ref.get('deliveryVariable','')
-    if not re.fullmatch('[A-Z][A-Z0-9_]*_TOKEN',variable):raise ValueError('토큰 공급 환경변수 이름을 설정하세요. 예: SERVICE_TOKEN')
+    if not cfg.valid_delivery_variable(variable):raise ValueError('공급 환경변수 이름을 설정하세요. 예: API_KEY')
     token=auth.value(ref)
     try:
         if not token or len(token)>65536 or any(c in token for c in ('\n','\r','\0')):raise ValueError('한 줄 토큰이 아닙니다.')
         env=dict(os.environ);env[variable]=token
+        managed={r.get('deliveryVariable') for r in state['credentials'] if r.get('deliveryVariable')}
         for name in list(env):
-            if name in ('BW_SESSION','BW_CLIENTSECRET','DOTFILES_VAULT_PASSWORD') or name.endswith('_TOKEN') and name!=variable:env.pop(name,None)
+            if name in ('BW_SESSION','BW_CLIENTSECRET','DOTFILES_VAULT_PASSWORD') or (name.endswith('_TOKEN') or name in managed) and name!=variable:env.pop(name,None)
         return subprocess.run(command,env=env).returncode
     finally:del token
 if __name__=='__main__':
