@@ -76,14 +76,24 @@ def safe_ssh_copy(source, target):
 
 
 def install(repo, mode):
+    from host_inventory import references
+    preserve_existing=bool(references())
     config.mkdir(parents=True, exist_ok=True)
-    link(repo / 'links/zsh/dotfiles.zsh', config / 'shell.zsh')
-    link(repo / 'links/zsh/zshrc', config / 'zshrc')
-    block(home / '.zshrc', 'shell', 'source "$HOME/.config/dotfiles/zshrc"')
+    shell=config/'shell.zsh'
+    if preserve_existing and (home/'.zshrc').exists() and shell.resolve()!=(repo/'links/zsh/dotfiles.zsh').resolve():
+        # Reference adoption does not transfer ownership of the legacy shell.
+        # Explicitly applied new selections are an additive source after it.
+        import shlex
+        block(home/'.zshrc','dashboard extras','source '+shlex.quote(str(repo/'links/zsh/dotfiles.zsh')),preserve_legacy_contents=True)
+    else:
+        link(repo / 'links/zsh/dotfiles.zsh', shell)
+        link(repo / 'links/zsh/zshrc', config / 'zshrc')
+        block(home / '.zshrc', 'shell', 'source "$HOME/.config/dotfiles/zshrc"',preserve_legacy_contents=preserve_existing)
     safe_ssh_copy(repo / 'links/ssh/config', home / '.ssh/config.d/dotfiles.conf')
     for key in (repo / 'links/ssh/keys').glob('*.pub'):
         link(key, home / '.ssh/keys' / key.name)
-    block(home / '.ssh/config', 'ssh', 'Include ~/.ssh/config.d/dotfiles.conf\nHost *', prepend=True)
+    ssh_include=('Host *\n' if preserve_existing else '')+'Include ~/.ssh/config.d/dotfiles.conf\nHost *'
+    block(home / '.ssh/config', 'ssh', ssh_include, prepend=not preserve_existing,preserve_legacy_contents=preserve_existing)
     (home / '.ssh/config').chmod(0o600)
     import subprocess
     # A stable include path avoids accumulating paths when the checkout is moved.

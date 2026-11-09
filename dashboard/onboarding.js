@@ -56,7 +56,7 @@ function renderSetupFlow(){
  const complete=[...setupSteps.map(step=>setupDone(step.id)),setupSaved(),setupApplied()],count=complete.filter(Boolean).length,next=complete.indexOf(false);
  const hero=el('section',undefined,'setup-hero');hero.append(el('span','처음 사용하는 기기 설정','setup-eyebrow'),el('h2',next<0?'기본 환경 설정을 마쳤어요':(next+1)+'. '+(setupSteps[next]?.title||(next===4?'선택한 설정 검토·저장':'도구 설치·설정 적용·접속 확인'))));
  hero.append(el('p',next<0?'아래의 외부 서비스와 프로젝트 실행 환경은 필요할 때 추가하세요.':next<4?setupSteps[next].text:next===4?'지금까지 선택한 내용을 검토하고 설정 파일을 생성하세요. 저장한 뒤 실제 환경에 적용합니다.':'적용 안내의 명령을 순서대로 실행하세요. 도구 설치, configure, 새 셸, 접속 확인이 남아 있습니다.'));
- const meter=el('progress');meter.max=6;meter.value=count;meter.setAttribute('aria-label','기본 설정 진행');hero.append(meter,el('p',count+' / 6단계 확인 · 실제 적용은 별도 확인','hint'));
+ const meter=el('progress');meter.max=6;meter.value=count;meter.setAttribute('aria-label','기본 설정 진행');hero.append(meter,el('p',count+' / 6단계 관리 설정 확인 기록 · 현재 컴퓨터의 설치 완료율이 아닙니다.','hint'));
  if(next>=0)hero.append(button(next===4?'변경 검토 · 저장하기':'지금 할 일로 이동 →',()=>next===4?review():navigate(setupSteps[next]?.view||'plan'),'btn primary'));
  root.append(hero);
  const list=el('ol',undefined,'setup-list');list.setAttribute('aria-label','처음 설정 순서');root.append(list);

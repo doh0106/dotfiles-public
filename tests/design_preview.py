@@ -21,7 +21,8 @@ with tempfile.TemporaryDirectory(prefix='dotfiles-design-') as temporary:
         with urllib.request.urlopen(url+'api/state') as response:data=json.load(response)
         assert data['design_preview'] and data['state']['connections'][0]['id']=='example-github'
         assert data['shared_environment']['availability']=='unavailable'
-        for target in ('api/settings','api/environment'):
+        assert data['host_state']['scope']=='example_only' and not data['host_state']['candidates']
+        for target in ('api/settings','api/environment','api/existing-settings'):
             request=urllib.request.Request(url+target,data=b'{}',headers={'Origin':url.rstrip('/'),'Content-Type':'application/json'})
             try:urllib.request.urlopen(request)
             except urllib.error.HTTPError as error:
