@@ -115,7 +115,7 @@ GitHub Enterprise와 GitLab Self-Managed도 호스트를 지정한다. SSH 접�
 | 앱·도구 | 프로그램 선택·설치 안내, 터미널·셸·테마, AI 도구·Agent Kit 스킬 안내 |
 | Git | 원격 저장소 접근, 폴더별 커밋 작성자·적용 규칙 |
 | 원격 접속 | SSH 접속 대상, Tailscale·집 WSL 준비 |
-| 비밀 관리 | 키·토큰, 일반 비밀번호 항목 참조, 공급·연동, 비밀 저장소, 키·세션 정책 |
+| 비밀 관리 | SSH 키 준비, 서비스 토큰 공급, 공급·연동, 비밀 저장소, 키·세션 정책 |
 | 프로젝트 실행 환경 | 선택한 프로젝트의 Dev Container 구성·상태 조회, 실행·접속·중지 명령 안내 |
 | 외부 서비스 | Jira·Confluence·Google의 계정 연결·인증·사용 설정 창 |
 
@@ -141,8 +141,8 @@ AI 스킬 설치 상태는 자동 관측하지 않으며 Agent Kit의 도구별 
 5. **변경 검토·적용**에서 초안을 검토하고 설정 파일을 저장한다.
 6. 같은 화면에서 저장한 설정의 적용 명령을 실행하고 확인 기록을 남긴다.
 
-키·토큰·비밀번호 참조는 **비밀 관리**에서 관리한다. 필요한 경우 **공급·연동**에서 연결에 공급할 항목을 선택한다.
-Bitwarden은 비밀 저장소이며, SSH 키 로드·토큰 주입은 별도 사용 기능이다. 비밀번호 본문은 저장소에서 관리한다.
+SSH 키·서비스 토큰은 **비밀 관리**의 단계별 흐름에서 준비한다. 필요한 경우 **공급·연동**에서 연결에 공급할 항목을 선택한다.
+Bitwarden은 비밀 저장소이며, SSH 키 로드·토큰 주입은 별도 사용 기능이다. 일반 비밀번호 탭은 제공하지 않으며 본문은 저장소에서 관리한다. [SSH 키·토큰 준비 안내](docs/secret-workflows.md)를 따른다.
 폴더 규칙과 인증 참조는 선택된 항목의 주요 내용을 본문에서 확인하며, 선택·변경 창에서 검색하고 비교한다.
 
 적용 안내는 현재 선택에 따라 확인 → 인증 재료 → 저장 → 미설치 도구 → configure → 새 zsh →
@@ -300,6 +300,7 @@ python3 tests/smoke.py
 python3 tests/dashboard.py
 node tests/dashboard-ui.js
 python3 tests/ssh_system.py
+python3 tests/secret_workflow.py
 python3 tests/runbook.py
 python3 tests/tools.py
 python3 tests/desktop.py

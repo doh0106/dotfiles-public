@@ -1,0 +1,98 @@
+'use strict';
+// Browser state contains metadata and public keys only. Vault sessions live in the local broker.
+const secretFlow={status:null,statusAttempted:false,busy:false,error:'',handoff:null,key:null,token:null,target:'',tokenTarget:'',tokenRole:'api',tokenDelivery:'connection',deliveryVariable:'SERVICE_TOKEN',programReference:'',username:'',searches:{'ssh-key':{query:'',items:[]},token:{query:'',items:[]}}};
+async function workflowRequest(request){const response=await fetch('/api/secrets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});const data=await response.json();if(!response.ok)throw Error(data.error);return data;}
+function renderSecretFlow(){if(view==='secrets')renderSecretSshWorkflow();else if(view==='secret-tokens')renderSecretTokenWorkflow();else if(view==='providers')renderProviders();else if(view==='secret-links')renderSecretLinks();attachDomainNavigation();}
+async function flowAction(request,done=()=>{}){
+ if(secretFlow.busy)return;secretFlow.busy=true;secretFlow.error='';renderSecretFlow();
+ try{const previous=secretFlow.status?.generation,result=await workflowRequest(request);done(result);secretFlow.status=request.action==='status'?result:await workflowRequest({action:'status'});if(previous&&previous!==secretFlow.status.generation){secretFlow.key=null;secretFlow.token=null;for(const search of Object.values(secretFlow.searches))search.items=[]}if(!secretFlow.key&&secretFlow.status.prepared?.length)secretFlow.key=secretFlow.status.prepared.at(-1);}
+ catch(error){secretFlow.error=error.message}
+ finally{secretFlow.busy=false;renderSecretFlow()}
+}
+function flowButton(title,request,done,disabled=false){const b=button(title,()=>flowAction(typeof request==='function'?request():request,done),'btn');b.disabled=secretFlow.busy||disabled||snapshot.design_preview;return b;}
+function flowStep(root,number,title,text){const box=groupBox(number+'. '+title,root);if(text)box.append(el('p',text,'tool-state'));return box;}
+function flowVault(root){
+ const box=flowStep(root,1,'Bitwarden 연결','로그인 정보는 터미널에서 입력합니다. 대시보드 연결은 15분 동안 유지하며 세션 값을 브라우저나 파일에 저장하지 않습니다.');
+ const status=secretFlow.status;
+ box.append(badge(status?.connected?'저장소 연결됨 · '+Math.ceil(status.expires_in/60)+'분 남음':status?.pending?'터미널 연결 대기 중':'저장소 연결 필요',status?.connected?'green':'amber'));
+ if(status&&['ssh-add','ssh-keygen','ssh-agent'].some(tool=>!status.installed[tool])){box.append(el('p','SSH 키 준비에는 OpenSSH 도구가 필요합니다. 설치 후 상태를 갱신하세요.','hint'));instructionLink(box,'OpenSSH 설치 안내','https://www.openssh.com/portable.html');}
+ if(status&&!status.installed.bw){box.append(el('p','Bitwarden CLI가 없습니다. 설치 후 연결 상태를 다시 확인하세요.','hint'));instructionLink(box,'Bitwarden CLI 설치 안내','https://bitwarden.com/help/cli/');}
+ box.append(flowButton('터미널에서 로그인·잠금 해제',{action:'connect',launch:true},result=>{secretFlow.handoff=result;secretFlow.key=null;secretFlow.token=null}),flowButton('연결 상태 갱신',{action:'status'}),flowButton('대시보드 연결 해제',{action:'disconnect'},()=>{secretFlow.key=null;secretFlow.token=null;for(const search of Object.values(secretFlow.searches))search.items=[]},!status?.connected));
+ if(secretFlow.handoff){box.append(el('p',secretFlow.handoff.launched?'열린 터미널에서 연결을 마친 뒤 상태를 갱신하세요.':'아래 명령을 원하는 터미널에 붙여넣고 연결을 마친 뒤 상태를 갱신하세요.','hint'),el('pre',secretFlow.handoff.command,'long-pre'));}
+ instructionLink(box,'첫 CLI 로그인용 개인 API 키 찾기','https://bitwarden.com/help/personal-api-key/');
+ box.append(el('p','첫 로그인은 계정의 개인 API 키로 CLI에 로그인한 뒤 마스터 비밀번호로 잠금을 해제합니다. 기존 CLI 계정은 바꾸지 않습니다. 연결한 터미널은 작업용 셸로 유지됩니다.','hint'));
+ if(secretFlow.error){const error=el('p',secretFlow.error,'notice');error.setAttribute('role','alert');box.append(error);}
+ if(!status&&!secretFlow.statusAttempted&&!secretFlow.busy&&!snapshot.design_preview){secretFlow.statusAttempted=true;queueMicrotask(()=>flowAction({action:'status'}));}
+ return box;
+}
+function flowSearch(root,purpose){
+ const search=secretFlow.searches[purpose],box=flowStep(root,2,'저장소 항목 검색·선택','이름으로 검색합니다. 목록에는 이름·항목 종류만 표시하며 개인키·토큰 본문은 표시하지 않습니다.');
+ const input=field(box,'검색할 항목 이름',search.query,null,value=>{search.query=value},'vault-item-search');input.placeholder=purpose==='ssh-key'?'예: github ssh key':'예: github token';
+ const lookup=()=>({action:'search',query:search.query,purpose});
+ box.append(flowButton('항목 검색',lookup,result=>{search.items=result.items},!secretFlow.status?.connected));
+ if(search.items.length){const list=el('div',undefined,'vault-results');for(const item of search.items){const row=el('article',undefined,'vault-item');row.append(el('strong',item.name),el('p',({note:'Secure Note',sshkey:'SSH Key',login:'Login'})[item.kind]+' · 항목 ID '+item.id,'hint'));
+  row.append(flowButton(purpose==='ssh-key'?'선택하고 공개키 준비':'선택하고 토큰 형식 확인',{action:purpose==='ssh-key'?'prepare_public':'check_token',item:item.id},result=>{if(purpose==='ssh-key')secretFlow.key=result;else secretFlow.token=result},!secretFlow.status?.connected));list.append(row)}box.append(list);}
+ else box.append(el('p','2자 이상 검색어를 입력하세요. SSH 키는 SSH Key·Secure Note, 토큰은 Secure Note·Login 항목을 선택할 수 있습니다.','hint'));
+}
+function flowReference(item,purpose,username=null){
+ let ref=draft.credentials.find(ref=>ref.source==='bitwarden'&&ref.item===item.item&&secretPurpose(ref)===purpose&&(username===null||ref.username===username));
+ if(!ref){ref=makeCredential(uniqueId((purpose==='ssh-key'?'ssh-key-':'token-')+item.item.slice(0,8),draft.credentials));Object.assign(ref,{purpose,kind:item.kind,item:item.item,username:username||''});draft.credentials.push(ref)}ref.purpose=purpose;return ref;
+}
+function flowConnectionRecords(kind){return draft.connections.filter(c=>kind==='ssh'?c.method==='ssh':c.kind==='git'&&(c.method==='https'||c.api.enabled)).map(c=>({id:c.id,title:c.name,lines:connectionLines(c)}));}
+function flowRegisterKey(){
+ const key=secretFlow.key,c=draft.connections.find(c=>c.id===secretFlow.target);if(!key?.saved||!c||c.method!=='ssh'){toast('공개키를 저장하고 SSH 연결을 선택하세요.');return}
+ const ref=flowReference(key,'ssh-key'),alias=snapshot.host_state?.candidates.find(item=>['ssh','git-ssh'].includes(item.category)&&item.label===c.host);
+ if(sshMode(c)==='system'&&alias){c.host=alias.details.hostname||c.host;c.sshUser=alias.details.user||c.sshUser;}
+ c.sshMode='key';c.publicKey=key.path;c.credential=ref.id;
+ if(!c.sshUser&&c.kind==='git'&&knownGitSshHost(c))c.sshUser='git';
+ if(key.dedicated_agent)c.agentSocket=key.agent_socket;else delete c.agentSocket;
+ mark();toast('키·공급 정책과 연결을 초안에 반영했습니다. 변경 검토에서 저장·적용하세요.');renderSecretFlow();
+}
+function renderSecretSshWorkflow(){
+ const root=$('page-body');root.replaceChildren();flowVault(root);flowSearch(root,'ssh-key');
+ const box=flowStep(root,3,'공개키 저장·정책·agent 공급','공개키는 .pub 파일로 저장합니다. 공개키 파일 저장과 agent 공급 버튼은 즉시 실행됩니다. 설정 초안 저장과 별개이며 개인키는 파일로 복사하지 않습니다.');const key=secretFlow.key;
+ if(!key){box.append(el('p','앞 단계에서 항목을 선택하면 공개키와 지문을 확인할 수 있습니다.','hint'));}
+ else{
+  box.append(el('strong',key.name),el('p',key.fingerprint,'tool-state'),el('pre',key.public,'long-pre'));
+  const keyPath=field(box,'공개키 저장 위치',key.path,null,value=>{key.path=value;key.saved=false},'workflow-public-key');keyPath.placeholder='예: ~/.ssh/keys/personal.pub';
+  box.append(flowButton(key.saved?'공개키 저장 확인됨 · 다시 확인':'공개키 파일 저장',()=>({action:'save_public',id:key.id,path:key.path}),result=>{secretFlow.key=result}));
+  field(box,'새로 공급하는 키의 유지 시간 · 초',draft.session.keyLifetime,null,value=>{draft.session.keyLifetime=Number(value);mark()},'workflow-key-ttl','number');
+  box.append(el('p','60~86400초. 이미 agent에 있는 동일한 키는 재사용하며 기존 유지 시간을 바꾸지 않습니다. 이 도구가 공급한 키만 정리합니다. 새 정책은 초안 저장으로 유지됩니다.','hint'));
+  const supply=flowButton('SSH agent에 키 공급',()=>({action:'supply_key',id:key.id,lifetime:draft.session.keyLifetime}),result=>{secretFlow.key=result},!key.saved||!secretFlow.status?.connected);box.append(supply);keyPath.addEventListener('input',()=>{supply.disabled=true});
+  if(key.loaded)box.append(badge('공급 실행 완료 · 서버 접속은 별도 확인','green'),el('p',key.dedicated_agent?'전용 agent를 사용합니다. 연결 설정에 이 소켓을 함께 지정하며 대시보드 종료 후 다시 공급해야 합니다.':'현재 agent를 재사용합니다. 다른 키의 설정은 변경하지 않습니다.','hint'));
+ }
+ const target=flowStep(root,4,'접속 설정에 연결·검토','이 단계는 설정 초안을 만듭니다. 검토·저장·적용과 실제 서버 접속 확인은 별도로 진행합니다.');
+ recordChoiceField(target,'키를 사용할 SSH 연결',secretFlow.target,()=>flowConnectionRecords('ssh'),value=>{secretFlow.target=value;renderSecretFlow()},'workflow-key-target','SSH 연결 선택');
+ const apply=button('선택한 키·정책을 연결 초안에 반영',flowRegisterKey,'btn primary');apply.disabled=!key?.saved||!secretFlow.target||secretFlow.busy;target.append(apply,button('Git 연결 추가·확인 →',()=>navigate('connections',{primary:true}),'quiet'),button('원격 SSH 대상 추가·확인 →',()=>navigate('servers',{primary:true}),'quiet'),button('변경 검토·적용 →',()=>navigate('plan',{primary:true}),'quiet'));
+ target.append(el('p','새 연결에는 서버 주소·SSH 사용자가 필요합니다. 공개키의 서버 등록과 실제 접속 성공은 이 과정에서 자동 처리하지 않습니다.','hint'));
+ const cleanup=flowStep(root,5,'작업 후 정리','대시보드에서 새로 공급한 키만 제거합니다. 다른 터미널의 키·인증 세션과 서버 토큰은 변경하지 않습니다.');cleanup.append(flowButton('이 대시보드가 공급한 키 정리',{action:'cleanup'},()=>{if(secretFlow.key)secretFlow.key.loaded=false}));
+ renderSecretInventory(root,'ssh-key');
+}
+function renderSecretTokenWorkflow(){
+ const root=$('page-body');root.replaceChildren();flowVault(root);flowSearch(root,'token');
+ const box=flowStep(root,3,'토큰 공급 대상 지정','토큰 본문은 표시·저장하지 않습니다. 선택한 HTTPS Git 또는 API 도구가 요청할 때만 해당 호스트의 명령에 공급합니다.');const token=secretFlow.token;
+ if(token)box.append(badge('한 줄 토큰 형식 확인됨','green'),el('p',token.name+' · 실제 권한·만료·서버 접근은 아직 확인하지 않았습니다.','hint'));
+ field(box,'토큰 공급 경로',secretFlow.tokenDelivery,[['connection','HTTPS Git·GitHub/GitLab API'],['program','다른 프로그램의 환경변수']],value=>{secretFlow.tokenDelivery=value;renderSecretFlow()},'workflow-token-delivery');
+ if(secretFlow.tokenDelivery==='program'){renderProgramSupply(box,token);renderSecretInventory(root,'token');return;}
+ recordChoiceField(box,'토큰을 사용할 연결',secretFlow.tokenTarget,()=>flowConnectionRecords('token'),value=>{secretFlow.tokenTarget=value;renderSecretFlow()},'workflow-token-target','HTTPS Git 또는 API 연결 선택');
+ const c=draft.connections.find(c=>c.id===secretFlow.tokenTarget),roles=[];if(c?.method==='https')roles.push(['git','HTTPS Git 인증']);if(c?.api.enabled)roles.push(['api','PR·이슈 API 도구']);
+ if(roles.length&&!roles.some(([id])=>id===secretFlow.tokenRole))secretFlow.tokenRole=roles[0][0];
+ if(roles.length)field(box,'사용할 기능',secretFlow.tokenRole,roles,value=>{secretFlow.tokenRole=value;renderSecretFlow()},'workflow-token-role');
+ if(secretFlow.tokenRole==='git'&&c?.method==='https'){field(box,'HTTPS Git 인증 사용자명',secretFlow.username,null,value=>{secretFlow.username=value},'workflow-token-user').placeholder='예: x-access-token 또는 서비스 사용자명';}
+ const apply=button('토큰 공급 설정을 초안에 반영',()=>{
+  if(!token||!c||!roles.some(([id])=>id===secretFlow.tokenRole)){toast('토큰과 사용할 기능을 선택하세요.');return}
+  if(secretFlow.tokenRole==='git'&&!secretFlow.username.trim()){toast('HTTPS Git 인증 사용자명을 입력하세요.');return}
+  const ref=flowReference(token,'token',secretFlow.tokenRole==='git'?secretFlow.username.trim():null);if(secretFlow.tokenRole==='git')c.credential=ref.id;else c.api.credential=ref.id;mark();toast('토큰 보관 위치와 공급 대상을 초안에 반영했습니다.');renderSecretFlow();
+ },'btn primary');apply.disabled=!token||!c||secretFlow.busy;box.append(apply,button('Git·API 연결 설정 →',()=>navigate('connections',{primary:true}),'quiet'),button('변경 검토·적용 →',()=>navigate('plan',{primary:true}),'quiet'));
+ box.append(el('p','저장·적용 후 로그인 연결에 사용한 터미널에서 작업하세요. HTTPS Git은 credential helper, API는 bwgh/bwglab 연결별 명령이 토큰을 공급합니다. 서비스 로그인·서버 권한 확인은 별도입니다.','hint'));renderSecretInventory(root,'token');
+}
+
+function renderProgramSupply(box,token){
+ field(box,'프로그램이 읽을 토큰 환경변수 이름',secretFlow.deliveryVariable,null,value=>{secretFlow.deliveryVariable=value},'workflow-token-variable').placeholder='예: JIRA_TOKEN';
+ const apply=button('프로그램용 토큰 참조를 초안에 반영',()=>{
+  if(!token||!(/^[A-Z][A-Z0-9_]*_TOKEN$/).test(secretFlow.deliveryVariable)){toast('SERVICE_TOKEN 형식의 변수 이름을 입력하세요.');return;}
+  const ref=flowReference(token,'token');ref.deliveryVariable=secretFlow.deliveryVariable;secretFlow.programReference=ref.id;mark();renderSecretFlow();toast('토큰 공급 참조를 초안에 반영했습니다. 검토·저장 후 명령을 실행하세요.');
+ },'btn primary');apply.disabled=!token||secretFlow.busy;box.append(apply,button('변경 검토·적용 →',()=>navigate('plan',{primary:true}),'quiet'));
+ box.append(el('p','저장 후 로그인에 사용한 터미널에서 아래 형식으로 대상 프로그램을 실행하세요. 프로그램이 지정한 환경변수를 읽어야 합니다. 기존 Jira·Confluence 인증 파일은 변경하지 않습니다.','hint'));
+ if(secretFlow.programReference)box.append(el('pre',snapshot.secret_supply_command+' --reference '+secretFlow.programReference+' -- PROGRAM ARGUMENTS','long-pre'));
+}

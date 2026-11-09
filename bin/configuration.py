@@ -142,7 +142,10 @@ def validate(state):
             if state['git']['enabled'] and (not p['author'].strip() or '@' not in p['email']):raise ValueError('활성 프로필의 커밋 이름·이메일이 필요합니다.')
     if state['git']['enabled'] and not roots:raise ValueError('Git 신원을 적용할 활성 프로필이 필요합니다.')
     for c in state['credentials']:
-        if set(c) not in ({'id','source','kind','item','variable','helper','username'},{'id','source','kind','item','variable','helper','username','purpose'}):raise ValueError('인증 참조 항목 형식 오류')
+        required={'id','source','kind','item','variable','helper','username'}
+        if not required<=set(c) or set(c)-required-{'purpose','deliveryVariable'}:raise ValueError('인증 참조 항목 형식 오류')
+        string(c.get('deliveryVariable',''),'토큰 공급 환경변수')
+        if c.get('deliveryVariable') and (c.get('purpose')!='token' or not re.fullmatch('[A-Z][A-Z0-9_]*_TOKEN',c['deliveryVariable'])):raise ValueError('공급 대상 환경변수는 SERVICE_TOKEN처럼 지정하세요.')
         if c.get('purpose','token') not in ('ssh-key','token','password'):raise ValueError('비밀 항목 용도 오류')
         if c.get('purpose')=='password' and (c['source']!='bitwarden' or c['kind'] not in ('note','login')):raise ValueError('일반 비밀번호는 비밀 저장소의 Login 또는 Secure Note를 참조하세요.')
         for key in ('source','kind','item','variable','helper','username'):string(c[key],'인증 참조 '+key)
@@ -162,12 +165,14 @@ def validate(state):
     seen=set();ssh_hosts=set()
     for c in state['connections']:
         required={'id','name','profile','provider','host','kind','enabled','method','sshUser','publicKey','credential','api'}
-        if not required<=set(c) or set(c)-required-{'sshAlias','sshMode'}:raise ValueError('연결 항목 형식 오류')
+        if not required<=set(c) or set(c)-required-{'sshAlias','sshMode','agentSocket'}:raise ValueError('연결 항목 형식 오류')
         if ssh_mode(c) not in ('system','key'):raise ValueError('SSH 인증 방식 오류')
         for k in ('name','profile','provider','host','kind','method','sshUser','publicKey','credential'):string(c[k],'연결 '+k,k=='name')
         if type(c['enabled']) is not bool or (c['profile'] and c['profile'] not in profiles):raise ValueError('연결의 프로필을 확인하세요.')
         if c['provider'] not in ('github','gitlab','generic') or c['method'] not in ('ssh','https') or c['kind'] not in ('git','server'):raise ValueError('지원하지 않는 서비스·통신 방식')
         if set(c['api']) not in ({'enabled','tool','credential'},{'enabled','tool','credential','host'}) or type(c['api']['enabled']) is not bool or c['api']['tool'] not in ('gh','glab','none'):raise ValueError('API 설정 형식 오류')
+        string(c.get('agentSocket',''),'SSH agent 소켓')
+        if c.get('agentSocket'):path(c['agentSocket'],'SSH agent 소켓')
         string(c.get('sshAlias',''),'SSH 서버 별칭')
         if c.get('sshAlias') and (c['kind']!='server' or not re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]*',c['sshAlias'])):raise ValueError('SSH 서버 별칭 형식 오류')
         string(c['api']['credential'],'API 인증 참조')
@@ -221,6 +226,7 @@ def compile(state):
         if c['method']=='ssh' and ssh_mode(c)=='key':
             hostname,port=host_parts(c['host']);sshfile='ssh-connection-'+c['id']+'.config'
             ssh='Host '+hostname+'\n    HostName '+hostname+'\n    User '+c['sshUser']+'\n    IdentitiesOnly yes\n    IdentityFile '+json.dumps(str(Path(c['publicKey']).expanduser()),ensure_ascii=False)+'\n'
+            if c.get('agentSocket'):ssh+='    IdentityAgent '+json.dumps(c['agentSocket'])+'\n'
             if port:ssh+='    Port '+str(port)+'\n'
             files[sshfile]=ssh+'Host *\nInclude ~/.ssh/config\n'
             text+='[core]\n    sshCommand = '+json.dumps(shlex.join(['ssh','-F',str(DATA/sshfile)]),ensure_ascii=False)+'\n'
@@ -245,6 +251,7 @@ def compile(state):
             sshfile='ssh-'+p['id']+'.config'
             for c in ssh_connections:
                 hostname,port=host_parts(c['host']);ssh+='Host '+hostname+'\n    HostName '+hostname+'\n    User '+c['sshUser']+'\n    IdentitiesOnly yes\n    IdentityFile '+json.dumps(str(Path(c['publicKey']).expanduser()),ensure_ascii=False)+'\n'
+                if c.get('agentSocket'):ssh+='    IdentityAgent '+json.dumps(c['agentSocket'])+'\n'
                 if port:ssh+='    Port '+str(port)+'\n'
             ssh+='Host *\nInclude ~/.ssh/config\n';files[sshfile]=ssh
             text+='[core]\n    sshCommand = '+json.dumps(shlex.join(['ssh','-F',str(DATA/sshfile)]),ensure_ascii=False)+'\n'
@@ -264,6 +271,7 @@ def compile(state):
     for c in active:
         if c['kind']!='server' or ssh_mode(c)=='system':continue
         hostname,port=host_parts(c['host']);ssh+='Host '+(c.get('sshAlias') or c['id'])+'\n    HostName '+hostname+'\n    User '+c['sshUser']+'\n    IdentitiesOnly yes\n    IdentityFile '+json.dumps(str(Path(c['publicKey']).expanduser()),ensure_ascii=False)+'\n'
+        if c.get('agentSocket'):ssh+='    IdentityAgent '+json.dumps(c['agentSocket'])+'\n'
         if port:ssh+='    Port '+str(port)+'\n'
     files['ssh.config']=ssh+'Host *\n'
     files['profiles.json']=json.dumps(runtime,ensure_ascii=False,indent=2)+'\n'

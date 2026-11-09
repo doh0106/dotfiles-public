@@ -20,6 +20,7 @@ import runbook
 import setup_progress
 import tailscale_setup
 import host_inventory
+import secret_workflow
 from environment_bridge import bridge
 
 REPO=cfg.REPO
@@ -90,7 +91,7 @@ def snapshot(state=None,migrated=None,revision=None,design_preview=False,catalog
     for f in definitions:
         f['installed']=features.installed(f,state['features'])
         f['dependencies']=tool_catalog.status(f['id'],state)
-    return dict(state=state,revision=revision if revision is not None else cfg.revision(),host_state=host_inventory.observe(design_preview),definitions=definitions,plan=plan(state),files=files,environment='설계 미리보기 · 예시 설정' if design_preview else platform.node()+' · '+platform.system(),data_directory='메모리의 예시 설정 · 저장 불가' if design_preview else str(DATA),auth_status=dict(agent='미리보기 · 조회 안 함',vault='미리보기 · 조회 안 함',scope='실제 인증 상태를 조회하지 않습니다.') if design_preview else auth_status(),shared_environment=dict(availability='unavailable') if design_preview else bridge.status(),tailscale=tailscale_setup.snapshot(design_preview),tailscale_apply_command=shlex.join(["python3",str(REPO/"bin/tailscale_setup.py"),"apply-ssh"]),setup_progress=setup_progress.status(state,design_preview),design_preview=design_preview,design_catalog_url=catalog_url,migration_notice='기존 설정을 새 구조로 불러왔습니다. 저장 전 검토하세요. 첫 저장 시 원본 설정을 백업합니다.' if migrated else '',validation_error=validation_error)
+    return dict(state=state,revision=revision if revision is not None else cfg.revision(),host_state=host_inventory.observe(design_preview),definitions=definitions,plan=plan(state),files=files,environment='설계 미리보기 · 예시 설정' if design_preview else platform.node()+' · '+platform.system(),secret_supply_command=shlex.join(['python3',str(REPO/'bin/secret_supply.py')]),data_directory='메모리의 예시 설정 · 저장 불가' if design_preview else str(DATA),auth_status=dict(agent='미리보기 · 조회 안 함',vault='미리보기 · 조회 안 함',scope='실제 인증 상태를 조회하지 않습니다.') if design_preview else auth_status(),shared_environment=dict(availability='unavailable') if design_preview else bridge.status(),tailscale=tailscale_setup.snapshot(design_preview),tailscale_apply_command=shlex.join(["python3",str(REPO/"bin/tailscale_setup.py"),"apply-ssh"]),setup_progress=setup_progress.status(state,design_preview),design_preview=design_preview,design_catalog_url=catalog_url,migration_notice='기존 설정을 새 구조로 불러왔습니다. 저장 전 검토하세요. 첫 저장 시 원본 설정을 백업합니다.' if migrated else '',validation_error=validation_error)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -104,7 +105,7 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         try:
             if path=='/api/state':self.reply(200,snapshot(design_preview=getattr(self.server,'design_preview',False),catalog_url=getattr(self.server,'design_catalog_url',None)))
-            elif path in ('/','/index.html','/app.js','/inventory.js','/record-picker.js','/change-center.js','/environment.js','/desktop.js','/style.css','/design/dashboard-design.js','/design/preview.js','/design/preview.css','/onboarding.js','/navigation.js','/tailscale.js','/design/design-inspector.js','/design/design-inspector.css'):
+            elif path in ('/','/index.html','/app.js','/secret-workflows.js','/inventory.js','/record-picker.js','/change-center.js','/environment.js','/desktop.js','/style.css','/design/dashboard-design.js','/design/preview.js','/design/preview.css','/onboarding.js','/navigation.js','/tailscale.js','/design/design-inspector.js','/design/design-inspector.css'):
                 file=REPO/'dashboard'/('index.html' if path in ('/','/index.html') else path[1:]);self.reply(200,file.read_bytes(),{'html':'text/html','js':'application/javascript','css':'text/css'}[file.suffix[1:]]+'; charset=utf-8')
             else:self.reply(404,{'error':'찾을 수 없습니다.'})
         except (ValueError,OSError,KeyError,TypeError) as exc:self.reply(400,{'error':'설정 읽기 실패: '+str(exc)})
@@ -113,6 +114,29 @@ class Handler(BaseHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin')!=origin:self.reply(403,{'error':'이 대시보드의 동일 출처 요청만 허용합니다.'});return
         if getattr(self.server,'design_preview',False) and self.path!='/api/preview':
             self.reply(403,{'error':'설계 미리보기에서는 설정 저장·인증 실행을 하지 않습니다.'});return
+        if self.path in ('/api/secrets','/api/secret-session'):
+            try:
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=16384:raise ValueError('비밀 관리 요청 크기 오류')
+                request=json.loads(self.rfile.read(size))
+                if not isinstance(request,dict):raise ValueError('비밀 관리 요청 형식 오류')
+                with secret_workflow.CREATION_LOCK:
+                    workflow=getattr(self.server,'secret_workflow',None)
+                    if workflow is None:
+                        # Status and connect are the only entry points before a broker exists.
+                        if self.path=='/api/secret-session' or request.get('action') not in ('status','connect'):raise ValueError('저장소 연결 상태를 먼저 확인하세요.')
+                        workflow=self.server.secret_workflow=secret_workflow.Workflow(origin)
+                if self.path=='/api/secret-session':
+                    if set(request)!={'ticket','session'}:raise ValueError('연결 요청 형식 오류')
+                    with workflow.lock:result=workflow.attach(request['ticket'],request['session'])
+                else:result=workflow.dispatch(request)
+                self.reply(200,result)
+            except (ValueError,RuntimeError) as exc:
+                # Domain errors are fixed messages; provider stdout/stderr is never included.
+                self.reply(400,{'error':str(exc)})
+            except (OSError,TypeError,KeyError):
+                self.reply(400,{'error':'비밀 관리 작업을 완료하지 못했습니다. 연결·선택 항목·공개키 경로를 확인하세요.'})
+            return
         if self.path=='/api/existing-settings':
             try:
                 size=int(self.headers.get('Content-Length','0'))
@@ -194,8 +218,13 @@ def main():
     server.design_preview=args.design_preview;server.design_catalog_url=args.design_catalog_url
     print(url,flush=True)
     if not args.no_browser:webbrowser.open(url)
+    import signal
+    def stop(signum,frame):raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM,stop)
     try:server.serve_forever()
     except KeyboardInterrupt:pass
-    finally:server.server_close();bridge.close()
+    finally:
+        if getattr(server,'secret_workflow',None):server.secret_workflow.close()
+        server.server_close();bridge.close()
 
 if __name__=='__main__':main()

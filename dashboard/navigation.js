@@ -5,11 +5,11 @@ const domains=[
  {id:'apps',title:'앱·도구',icon:'shell',start:'appearance',intro:'필요한 프로그램을 준비하고 터미널·셸과 AI 작업 도구를 설정합니다.',pages:[['appearance','터미널·셸·테마'],['tools','프로그램 설치'],['agents','AI 도구·스킬']]},
  {id:'git',title:'Git',icon:'git',start:'connections',intro:'서버별로 clone·pull·push에 사용할 접속 방식과 인증을 설정합니다. 커밋 작성자와 폴더 규칙도 따로 관리할 수 있습니다.',pages:[['connections','원격 저장소 접근'],['profiles','커밋 작성자·적용 규칙 · 선택']]},
  {id:'remote',title:'원격 접속',icon:'globe',start:'servers',intro:'터미널로 접속할 컴퓨터를 등록하고 SSH와 필요한 네트워크 연결을 준비합니다.',pages:[['servers','SSH 접속 대상'],['tailscale','Tailscale·집 WSL']]},
- {id:'credentials',title:'비밀 관리',icon:'key',start:'secrets',intro:'키·토큰·비밀번호와 비밀 저장소를 관리합니다. SSH와 서비스에 공급하는 방법은 별도로 연결합니다.',pages:[['secrets','키·토큰'],['passwords','비밀번호'],['secret-links','공급·연동'],['providers','비밀 저장소'],['sessions','키·세션 정책']]},
+ {id:'credentials',title:'비밀 관리',icon:'key',start:'secrets',intro:'Bitwarden에서 항목을 선택해 SSH 키를 준비하고 서비스 토큰의 공급 대상을 설정합니다.',pages:[['secrets','SSH 키 준비'],['secret-tokens','서비스 토큰'],['secret-links','공급·연동'],['providers','비밀 저장소'],['sessions','키·세션 정책']]},
  {id:'runtime',title:'프로젝트 실행 환경',icon:'code',start:'runtime',intro:environmentViews.runtime[1],pages:[['runtime','프로젝트 실행 환경']]},
  {id:'services',title:'외부 서비스',icon:'link',start:'services',intro:environmentViews.services[1],pages:[['services','외부 서비스']]}
 ];
-Object.assign(labels,{existing:'기존 설정 가져오기',overview:'환경 현황',plan:'변경 검토·적용',setup:'처음 설정',agents:'AI 도구·스킬',servers:'SSH 접속 대상','remote-secrets':'인증정보 참조 관리','remote-sessions':'SSH 키·세션 정책',runtime:'프로젝트 실행 환경',services:'외부 서비스',tools:'프로그램 설치',appearance:'터미널·셸·테마',profiles:'커밋 작성자·적용 규칙',connections:'원격 저장소 접근',secrets:'키·토큰',passwords:'비밀번호',providers:'비밀 저장소','secret-links':'공급·연동',sessions:'키·세션 정책'});
+Object.assign(labels,{existing:'기존 설정 가져오기',overview:'환경 현황',plan:'변경 검토·적용',setup:'처음 설정',agents:'AI 도구·스킬',servers:'SSH 접속 대상','remote-secrets':'인증정보 참조 관리','remote-sessions':'SSH 키·세션 정책',runtime:'프로젝트 실행 환경',services:'외부 서비스',tools:'프로그램 설치',appearance:'터미널·셸·테마',profiles:'커밋 작성자·적용 규칙',connections:'원격 저장소 접근',secrets:'SSH 키 준비','secret-tokens':'서비스 토큰',passwords:'SSH 키 준비',providers:'비밀 저장소','secret-links':'공급·연동',sessions:'키·세션 정책'});
 function domainFor(page){return domains.find(domain=>[...domain.pages,...(domain.utilities||[])].some(([id])=>id===page));}
 function primaryButton(title,id,icon){const item=button(title,()=>navigate(id,{primary:true}));item.dataset.view=id;item.setAttribute('aria-label',title);item.disabled=!draft;if(icon)item.insertAdjacentHTML('afterbegin',svg[icon]);return item;}
 function buildNavigation(){
@@ -31,7 +31,7 @@ function updateLocation(){
  $('page-title').textContent=labels[view];document.title=labels[view]+' · dotfiles';
  $('overline').textContent=setupMode?'처음 설정 안내':domain?'환경 구성 · '+domain.title:view==='plan'?'변경 관리':view==='existing'?'기존 설정 가져오기':'내 환경';
  $('page-intro').textContent=domain?.intro||({overview:'이 기기에서 감지한 현재 상태와 대시보드에서 관리하는 항목을 확인합니다.',setup:'필요한 설정을 순서대로 안내합니다. 각 단계의 확인 기록도 이 화면에서 볼 수 있습니다.',existing:'감지한 설정을 검토하고 원본을 유지하는 참조로 관리 목록에 추가합니다.',plan:'셸·도구·Git·SSH 설정의 변경을 검토·저장하고 적용 방법을 확인합니다. 서비스 로그인과 프로젝트 실행은 각 화면에서 진행합니다.'})[view];
- const action=({connections:'+ Git 연결 추가',servers:'+ SSH 대상 추가',profiles:'+ 폴더 규칙 추가',secrets:'+ 키·토큰 등록',passwords:'+ 비밀번호 항목 등록','remote-secrets':'+ 인증 참조 추가'})[view];$('heading-action').hidden=!action;$('heading-action').textContent=action||'';
+ const action=({connections:'+ Git 연결 추가',servers:'+ SSH 대상 추가',profiles:'+ 폴더 규칙 추가',secrets:'+ SSH 키 참조 직접 등록','secret-tokens':'+ 토큰 참조 직접 등록','remote-secrets':'+ 인증 참조 추가'})[view];$('heading-action').hidden=!action;$('heading-action').textContent=action||'';
 }
 function attachDomainNavigation(){
  if(!draft)return;
@@ -60,10 +60,11 @@ function restoreDashboardLocation(){
 function navigate(next,options={}){
  if(!draft)return;
  for(const dialog of all('dialog[open]'))dialog.close();
+ if(next==='passwords')next='secrets';
  if(next==='remote-secrets')next='secrets';if(next==='remote-sessions')next='sessions';
  if(next==='environment')next='services';const domain=domains.find(item=>item.id===next);if(domain)next=domain.start;
  if(options.primary)setupMode=false;if(next==='setup')setupMode=true;if(['overview','plan','existing'].includes(next))setupMode=false;
- const renders={overview:renderEnvironmentOverview,setup:renderSetupFlow,existing:renderExistingSettings,tools:renderTools,appearance:renderAppearance,agents:renderAgents,connections:renderConnections,servers:renderConnections,profiles:renderProfiles,secrets:renderSecrets,providers:renderProviders,passwords:renderSecrets,'secret-links':renderSecretLinks,sessions:renderSessions,'remote-secrets':renderSecrets,'remote-sessions':renderSessions,services:renderEnvironment,runtime:renderEnvironment,tailscale:renderTailscale,plan:renderPlan};
+ const renders={overview:renderEnvironmentOverview,setup:renderSetupFlow,existing:renderExistingSettings,tools:renderTools,appearance:renderAppearance,agents:renderAgents,connections:renderConnections,servers:renderConnections,profiles:renderProfiles,secrets:renderSecrets,providers:renderProviders,'secret-tokens':renderSecretTokenWorkflow,'secret-links':renderSecretLinks,sessions:renderSessions,'remote-secrets':renderSecrets,'remote-sessions':renderSessions,services:renderEnvironment,runtime:renderEnvironment,tailscale:renderTailscale,plan:renderPlan};
  if(!renders[next])next='overview';const changed=view!==next||location.hash!==routeFor(next);
  if(['connections','servers'].includes(next)&&view!==next){chosen='';search='';}
  view=next;const hash=routeFor(view);if(location.hash!==hash){if(options.history===false||!location.hash)history.replaceState(null,'',hash);else history.pushState(null,'',hash)}

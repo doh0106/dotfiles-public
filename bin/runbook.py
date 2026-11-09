@@ -13,7 +13,7 @@ def build(state,dependencies,repo,data):
     active=[c for c in state['connections'] if c['enabled']]
     credentials={c['id']:c for c in state['credentials']}
     profiles={p['id']:p for p in state['profiles'] if p['enabled']}
-    refs={ref for c in active for ref in cfg.connection_refs(c) if ref}
+    refs={ref for c in active for ref in (([c['credential']] if c['method']!='ssh' or cfg.ssh_mode(c)=='key' and not c.get('agentSocket') else [])+([c['api']['credential']] if c['api']['enabled'] else [])) if ref}
     vault_refs=[credentials[ref] for ref in sorted(refs) if credentials[ref]['source']=='bitwarden']
     stages=[]
     def stage(ident,title,description,blocks,view=None):
@@ -77,6 +77,8 @@ def build(state,dependencies,repo,data):
         credential=credentials.get(c['credential'])
         if c['method']=='ssh' and cfg.ssh_mode(c)=='system':
             preparation.append(block(c['name']+' · 기존 SSH 설정 사용','기존 ~/.ssh/config·agent·SSH 인증 절차에 맡깁니다. 키 로드·vault 로그인·공개키 파일 준비를 요구하지 않습니다. 실제 서버 인증은 별도 확인하세요.'))
+        elif c['method']=='ssh' and c.get('agentSocket'):
+            preparation.append(block(c['name']+' · 대시보드 전용 agent','SSH 키 준비 화면에서 키를 공급하세요. 이 명령은 해당 agent의 상태만 확인하며 현재 터미널에 다른 agent를 만들거나 키를 다시 로드하지 않습니다.',[shlex.join(['env','SSH_AUTH_SOCK='+c['agentSocket'],'ssh-add','-l'])]))
         elif c['method']=='ssh':
             text=('Bitwarden에서 개인키를 읽어 agent에 로드합니다. 새 키 TTL: '+str(state['session']['keyLifetime'])+'초. 이미 있는 키의 TTL은 바꾸지 않습니다.' if credential and credential['source']=='bitwarden' else '기존 SSH agent에 대응하는 키를 준비하세요. 이 공급자에서는 키를 가져오거나 TTL을 변경하지 않고 공개키 일치 여부를 확인합니다.')
             preparation.append(block(c['name']+' · SSH 키 준비',text,[shlex.join(['ssh-keygen','-lf',str(Path(c['publicKey']).expanduser())]),shlex.join(['bws','--connection',c['id']]),'ssh-add -l']))
@@ -119,6 +121,8 @@ def build(state,dependencies,repo,data):
         command=shlex.join(['git','-c','include.path='+str(data/('profile-'+c['profile']+'.gitconfig' if c['profile'] else 'connection-'+c['id']+'.gitconfig')),'clone',url,str(Path(profiles[c['profile']]['path']).expanduser()/'REPO') if c['profile'] else '/PATH/TO/REPO'])
         clone.append(block(c['name']+' · 최초 clone 예시','선택한 연결의 설정 파일을 명시합니다. 프로필이 없으면 폴더 자동 적용이 없으므로 기존 저장소에서도 git -c include.path=… 명령을 사용하거나 해당 저장소의 로컬 include로 연결하세요. OWNER/REPO와 대상 폴더는 실제 값으로 바꾸세요.',[command],when='새 저장소가 필요할 때만',optional=True,example=True))
     if clone:stage('clone','필요할 때만 새 저장소 가져오기','현재 환경 설정만 확인한다면 이 단계는 건너뛰세요.',clone)
+    if any(c['method']=='ssh' and cfg.ssh_mode(c)=='key' and c.get('agentSocket') for c in active):
+        stage('managed-agent','대시보드에서 공급한 키 정리','작업을 마친 뒤 SSH 키 준비 화면의 정리 버튼을 사용합니다. 다른 agent의 키는 변경하지 않습니다.',[block('전용 agent 수명','대시보드를 다시 시작한 뒤 SSH 키 준비에서 키를 다시 공급하세요. 전용 소켓 경로는 유지됩니다.')],'secrets')
     if refs:
         commands=['bwe']+[shlex.join(['unset',credentials[ref]['variable']]) for ref in sorted(env_refs)]
         stage('cleanup','작업을 마치면 같은 터미널에서 정리','인증 준비 직후가 아니라 Git·API 작업을 모두 마친 뒤 실행하세요.',[block('이 셸의 관리 키·세션 정리','새로 추가한 키만 제거하고, 이 셸이 사용한 vault를 잠급니다. 기존 키·다른 터미널·외부 helper 저장소·서버의 토큰 만료/폐기는 별도 관리입니다.',commands)])

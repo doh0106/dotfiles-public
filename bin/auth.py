@@ -47,8 +47,8 @@ def fetch(item, kind, private=False):
     return read_bitwarden(item,kind,run)
 
 
-def keys():
-    result=run(['ssh-add','-L'])
+def keys(runner=None):
+    result=(runner or run)(['ssh-add','-L'])
     if result.returncode not in (0,1):raise RuntimeError('SSH agent에 연결할 수 없습니다.')
     # Keep public key type+blob; comments are not identity and may differ.
     return {' '.join(line.split()[:2]) for line in result.stdout.splitlines() if len(line.split())>=2}
@@ -88,8 +88,9 @@ def derive_public(value):
             process.communicate()
 
 
-def add(item, kind, lifetime, public_path=None):
-    before=keys();expected=None
+def add(item, kind, lifetime, public_path=None, runner=None, fetcher=None):
+    runner=runner or run;fetcher=fetcher or fetch
+    before=keys(runner);expected=None
     if public_path:
         try:parts=Path(public_path).expanduser().read_text().split()
         except OSError:raise RuntimeError('프로필의 공개키 파일을 먼저 준비하세요.') from None
@@ -98,7 +99,7 @@ def add(item, kind, lifetime, public_path=None):
         if expected in before:
             print('이미 agent에 있는 키를 재사용합니다. 기존 키의 만료시간은 변경하지 않습니다.',file=sys.stderr)
             return []
-    value=fetch(item,kind,private=True)
+    value=fetcher(item,kind,private=True)
     try:
         # Validate before ssh-add so a mismatched vault item cannot reset the TTL
         # of a different identity already present in a shared agent.
@@ -109,11 +110,11 @@ def add(item, kind, lifetime, public_path=None):
         if public in before:
             print('이미 agent에 있는 키를 재사용합니다. 기존 TTL은 변경하지 않습니다.',file=sys.stderr)
             return []
-        result=run(['ssh-add','-t',str(lifetime),'-'],input=value+'\n')
+        result=runner(['ssh-add','-t',str(lifetime),'-'],input=value+'\n')
     finally:del value
-    after=keys();added=after-before
+    after=keys(runner);added=after-before
     if result.returncode or (expected and expected not in after):
-        for public in added:run(['ssh-add','-d','-'],input=public+'\n')
+        for public in added:runner(['ssh-add','-d','-'],input=public+'\n')
         raise RuntimeError('키 로드 실패 또는 공개키 불일치. 새로 추가된 키는 제거했습니다.')
     return sorted(added)
 
@@ -247,18 +248,22 @@ def main():
     ref=selected['api']['credential'] if tool else '' if system else selected['credential']
     credential=config['credentials'].get(ref)
     if credential and selected['method']=='ssh' and not tool and credential.get('purpose') not in (None,'ssh-key'):raise RuntimeError('이 항목은 SSH 키 공급 용도가 아닙니다.')
-    if args.action in ('needs-vault','needs-gh','needs-glab'):print('bitwarden' if credential and credential['source']=='bitwarden' else 'none');return
+    managed=selected['method']=='ssh' and ssh_mode(selected)=='key' and bool(selected.get('agentSocket')) and not tool
+    if args.action in ('needs-vault','needs-gh','needs-glab'):print('bitwarden' if not managed and credential and credential['source']=='bitwarden' else 'none');return
     if args.action=='prepare':
-        print('ssh-system' if system else selected['method']+'-'+(credential['source'] if credential else 'agent' if selected['method']=='ssh' else 'existing'));return
+        print('ssh-managed' if managed else 'ssh-system' if system else selected['method']+'-'+(credential['source'] if credential else 'agent' if selected['method']=='ssh' else 'existing'));return
     if args.action in ('load','check'):
         if system:
             print('기존 OpenSSH 설정에 맡깁니다. 키·vault를 조회하거나 변경하지 않았으며 실제 접속 성공은 별도 확인이 필요합니다.',file=sys.stderr);return
         if selected['method']=='https':
             print('HTTPS 인증은 Git credential helper가 요청 시 조회합니다. SSH 키를 로드하지 않습니다.',file=sys.stderr);return
-        if args.action=='check' or not credential or credential['source']=='agent':
+        runner=None
+        if managed:
+            env=dict(os.environ,SSH_AUTH_SOCK=selected['agentSocket']);runner=lambda command,**kw:run(command,env=env,**kw)
+        if args.action=='check' or managed or not credential or credential['source']=='agent':
             try:expected=' '.join(Path(selected['publicKey']).expanduser().read_text().split()[:2])
             except OSError:raise RuntimeError('연결의 공개키 파일을 찾을 수 없습니다.') from None
-            if expected not in keys():raise RuntimeError('선택한 키가 agent에 없습니다. 공급자 agent에 키를 준비하거나 Bitwarden 로드를 선택하세요.')
+            if expected not in keys(runner):raise RuntimeError('선택한 키가 agent에 없습니다. SSH 키 준비 화면에서 공급하거나 기존 agent에 키를 준비하세요.')
             print(selected['id']+': key present (남은 TTL은 조회 불가)',file=sys.stderr);return
         if run(['bw','sync','--nointeraction']).returncode:raise RuntimeError('Bitwarden 동기화 실패. invalid_grant라면 unset BW_SESSION → bw logout → bwl로 복구하세요.')
         for key in add(credential['item'],credential['kind'],config['lifetime'],selected['publicKey']):print(key,flush=True)

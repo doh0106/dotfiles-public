@@ -160,7 +160,7 @@ function renderRows(){
 function updateConnection(c,key,value){c[key]=value;mark();renderRows();renderMap();if($('inspector-title'))$('inspector-title').textContent=c.name;if($('inspector-subtitle'))$('inspector-subtitle').textContent=c.host}
 function compatible(source,role,c){return role==='api'?['bitwarden','environment'].includes(source):c.method==='ssh'?['bitwarden','agent'].includes(source):['bitwarden','git-helper'].includes(source)}
 function credentialFields(parent,ref,allowed,onchange,ssh=false){
- field(parent,'보관 위치·기존 인증 도구',ref.source,allowed.map(v=>[v,sources[v]]),v=>{ref.source=v;if(ssh===false&&ref.kind==='sshkey')ref.kind='note';onchange();if(connectionView())renderInspector();else renderSecrets()},'source-'+ref.id);
+ field(parent,'보관 위치·기존 인증 도구',ref.source,allowed.map(v=>[v,sources[v]]),v=>{ref.source=v;if(ssh===false&&ref.kind==='sshkey')ref.kind='note';onchange();if(connectionView())renderInspector();else renderSecretFlow()},'source-'+ref.id);
  if(ref.source==='bitwarden'){
   field(parent,'Bitwarden 항목 이름 / ID · 비밀값 아님',ref.item,null,v=>{ref.item=v;onchange()},'item-'+ref.id);
   field(parent,'Bitwarden 항목 형식',ref.kind,(ssh===null?['note','sshkey','login']:ssh?['note','sshkey']:['note','login']).map(v=>[v,{note:'Secure note의 본문',sshkey:'SSH Key의 개인키',login:'Login의 password'}[v]]),v=>{ref.kind=v;onchange()},'kind-'+ref.id);
@@ -275,18 +275,18 @@ function renderTools(){
  root.append(el('p','셸 테마는 ‘셸과 테마’, Git·SSH·HTTPS·API는 ‘원격 저장소 접근 또는 원격 접속’에서 관리합니다.','note'));
 }
 function secretPurpose(ref){return ref.purpose||(ref.kind==='sshkey'||ref.source==='agent'||draft.connections.some(c=>c.method==='ssh'&&c.credential===ref.id)?'ssh-key':'token')}
-function renderSecrets(){
- const root=$('page-body');root.replaceChildren();const passwords=view==='passwords';
- explanation(root,passwords?'비밀번호 항목 관리':'키·토큰 항목 관리',passwords?'비밀 저장소에 보관한 일반 비밀번호의 위치를 등록합니다. 본문 조회·복사·수정은 저장소에서 진행합니다. Git·SSH·API에는 자동 공급하지 않습니다.':'항목의 용도와 보관 위치를 관리합니다. 비밀 본문은 표시하지 않으며 SSH 등에 공급하는 방법은 공급·연동에서 별도로 정합니다.');root.append(button('공급·연동 →',()=>navigate('secret-links'),'quiet'));
- const grid=el('div',undefined,'tool-grid');root.append(el('h2',passwords?'등록한 비밀번호':'등록한 키·토큰'),grid);
- if(!draft.credentials.some(ref=>(secretPurpose(ref)==='password')===passwords))grid.append(el('p','등록한 인증정보가 없습니다. 필요한 키·토큰만 추가하세요.','hint'));
- for(const ref of draft.credentials.filter(ref=>(secretPurpose(ref)==='password')===passwords)){const body=groupBox(ref.id,grid),uses=draft.connections.filter(c=>c.credential===ref.id||c.api.credential===ref.id);
+function renderSecrets(){renderSecretSshWorkflow()}
+function renderSecretInventory(parent,purpose){
+ const root=el('details',undefined,'group');root.append(el('summary',purpose==='ssh-key'?'등록한 SSH 키 참조 · 직접 편집':'등록한 토큰 참조 · 직접 편집'));parent.append(root);
+ const grid=el('div',undefined,'tool-grid');root.append(el('h2',purpose==='ssh-key'?'등록한 SSH 키 참조':'등록한 토큰 참조'),grid);
+ if(!draft.credentials.some(ref=>secretPurpose(ref)===purpose))grid.append(el('p','등록한 인증정보가 없습니다. 필요한 키·토큰만 추가하세요.','hint'));
+ for(const ref of draft.credentials.filter(ref=>secretPurpose(ref)===purpose)){const body=groupBox(ref.id,grid),uses=draft.connections.filter(c=>c.credential===ref.id||c.api.credential===ref.id);
   body.append(el('p',uses.length?'연결된 항목: '+uses.map(c=>c.name+(c.method==='ssh'&&sshMode(c)==='system'&&c.credential===ref.id?' · SSH 연동 사용 안 함':'')).join(', '):'아직 연결하지 않은 인증정보','tool-state'));
   const ssh=secretPurpose(ref)==='ssh-key';
-  field(body,'항목 용도',secretPurpose(ref),[['ssh-key','SSH 키'],['token','토큰'],['password','일반 비밀번호']],value=>{ref.purpose=value;if(value==='password'){ref.source='bitwarden';if(ref.kind==='sshkey')ref.kind='login'}else if(value==='ssh-key'){if(!['bitwarden','agent'].includes(ref.source))ref.source='bitwarden';if(ref.kind==='login')ref.kind='sshkey'}else{if(ref.source==='agent')ref.source='bitwarden';if(ref.kind==='sshkey')ref.kind='note'}mark();renderSecrets()},'purpose-'+ref.id);
-  let allowed=passwords?['bitwarden']:ssh?['bitwarden','agent']:['bitwarden','git-helper','environment'];for(const c of uses){if(c.credential===ref.id&&!(c.method==='ssh'&&sshMode(c)==='system'))allowed=allowed.filter(source=>compatible(source,'git',c));if(c.api.enabled&&c.api.credential===ref.id)allowed=allowed.filter(source=>compatible(source,'api',c));}if(!allowed.includes(ref.source))allowed.push(ref.source);
-  credentialFields(body,ref,allowed,()=>{mark()},passwords?false:ssh);
-  body.append(button('등록 삭제',()=>{if(uses.length){toast('연결에서 연동을 해제한 뒤 삭제하세요.');return}draft.credentials=draft.credentials.filter(c=>c.id!==ref.id);mark();renderSecrets()},'quiet danger'));
+  field(body,'항목 용도',secretPurpose(ref),[['ssh-key','SSH 키'],['token','토큰']],value=>{ref.purpose=value;if(value==='password'){ref.source='bitwarden';if(ref.kind==='sshkey')ref.kind='login'}else if(value==='ssh-key'){if(!['bitwarden','agent'].includes(ref.source))ref.source='bitwarden';if(ref.kind==='login')ref.kind='sshkey'}else{if(ref.source==='agent')ref.source='bitwarden';if(ref.kind==='sshkey')ref.kind='note'}mark();renderSecretFlow()},'purpose-'+ref.id);
+  let allowed=ssh?['bitwarden','agent']:['bitwarden','git-helper','environment'];for(const c of uses){if(c.credential===ref.id&&!(c.method==='ssh'&&sshMode(c)==='system'))allowed=allowed.filter(source=>compatible(source,'git',c));if(c.api.enabled&&c.api.credential===ref.id)allowed=allowed.filter(source=>compatible(source,'api',c));}if(!allowed.includes(ref.source))allowed.push(ref.source);
+  credentialFields(body,ref,allowed,()=>{mark()},ssh);
+  body.append(button('등록 삭제',()=>{if(uses.length){toast('연결에서 연동을 해제한 뒤 삭제하세요.');return}draft.credentials=draft.credentials.filter(c=>c.id!==ref.id);mark();renderSecretFlow()},'quiet danger'));
  }
 }
 function renderSecretLinks(){
@@ -297,18 +297,18 @@ function renderSecretLinks(){
   const row=el('section',undefined,'auth-link-card');row.append(el('h3',c.name),el('p',c.host+' · '+c.method.toUpperCase()+' · '+(c.enabled?'사용 설정됨':'사용 꺼짐'),'hint'));
   if(c.method==='ssh'&&sshMode(c)==='system'){
    row.append(el('p','기존 SSH 설정 사용 · 별도 키 연동 없이 OpenSSH에 맡깁니다.','tool-state'));
-   if(c.credential)row.append(el('p','보존된 이전 연동: '+c.credential+' · 현재 사용하지 않음','hint'),button('이전 연동 해제',()=>{c.credential='';mark();renderSecrets()},'quiet'));
+   if(c.credential)row.append(el('p','보존된 이전 연동: '+c.credential+' · 현재 사용하지 않음','hint'),button('이전 연동 해제',()=>{c.credential='';mark();renderSecretLinks()},'quiet'));
   }else{
-   recordChoiceField(row,c.method==='ssh'?'공급받을 SSH 키':'HTTPS 인증정보',c.credential,()=>credentialRecords(c,'git'),value=>{c.credential=value;mark();renderSecrets()},'auth-'+c.id+'-git',c.method==='ssh'?'연동하지 않음 · 기존 agent의 지정 키 사용':'연동하지 않음 · 기존 Git 인증 도구 사용');
+   recordChoiceField(row,c.method==='ssh'?'공급받을 SSH 키':'HTTPS 인증정보',c.credential,()=>credentialRecords(c,'git'),value=>{c.credential=value;mark();renderSecretLinks()},'auth-'+c.id+'-git',c.method==='ssh'?'연동하지 않음 · 기존 agent의 지정 키 사용':'연동하지 않음 · 기존 Git 인증 도구 사용');
    if(c.method==='ssh')row.append(el('p','공개키: '+(c.publicKey||'미지정 · 연결 설정에서 입력하세요.'),'hint'));
    const ref=credentialOf(c.credential);if(ref&&!compatible(ref.source,'git',c))row.append(el('p','현재 접속 방식에서 사용할 수 없는 인증정보입니다. 연동을 변경하세요.','field-error'));
   }
-  if(c.api.enabled)recordChoiceField(row,'PR·이슈 도구 토큰',c.api.credential,()=>credentialRecords(c,'api'),value=>{c.api.credential=value;mark();renderSecrets()},'auth-'+c.id+'-api','토큰 연동 안 함');
+  if(c.api.enabled)recordChoiceField(row,'PR·이슈 도구 토큰',c.api.credential,()=>credentialRecords(c,'api'),value=>{c.api.credential=value;mark();renderSecretLinks()},'auth-'+c.id+'-api','토큰 연동 안 함');
   row.append(button('접속 설정 열기 →',()=>openConnection(c),'quiet'));links.append(row);
  }
 }
 function renderProviders(){
- const root=$('page-body');root.replaceChildren();
+ const root=$('page-body');root.replaceChildren();flowVault(root);
  explanation(root,'비밀 저장소','Bitwarden은 키·토큰·비밀번호를 보관하는 저장소입니다. SSH 등록이나 토큰 공급은 공급·연동에서 관리합니다. 저장소를 바꾸더라도 접속 설정은 그대로 두고 항목의 보관 위치를 바꿀 수 있습니다.');
  const box=groupBox('Bitwarden',root),refs=draft.credentials.filter(ref=>ref.source==='bitwarden');
  box.append(el('p','보관 항목 참조 '+refs.length+'개 · '+(refs.map(ref=>ref.id).join(', ')||'등록 없음'),'tool-state'),el('p','CLI 설치·로그인·잠금 해제가 필요합니다. 데스크톱 앱과 CLI의 로그인 상태는 별개이며 실제 vault 상태는 자동 조회하지 않습니다.','hint'),el('pre','bw status\n# unauthenticated이면 bwl\n# locked이면 bwu','long-pre'));
@@ -385,14 +385,14 @@ function renderFiles(body,files=snapshot.files,source='saved',refresh=null){
  body.append(button('초안 검증·미리보기 갱신',async()=>{if(refresh){refresh();return}const state=JSON.stringify(draft);try{const data=await api('/api/preview',draft);if(state!==JSON.stringify(draft)){toast('초안이 바뀌었습니다. 다시 실행하세요.');return}body.replaceChildren();renderFiles(body,data.files,'draft')}catch(e){toast(e.message)}}));
 }
 
-function makeCredential(id,source='bitwarden'){return {id,source,purpose:view==='passwords'?'password':'token',kind:view==='passwords'?'login':'note',item:'',variable:'',helper:'cache',username:''}}
+function makeCredential(id,source='bitwarden'){return {id,source,purpose:view==='secrets'?'ssh-key':'token',kind:'note',item:'',variable:'',helper:'cache',username:''}}
 function uniqueId(base,list){let id=base,i=2;while(list.some(x=>x.id===id))id=base+'-'+i++;return id}
 function newCredential(c=null,role='git'){
  const proposed=uniqueId(c?c.id+'-'+role:'credential',draft.credentials);
- openAdd(view==='passwords'?'비밀번호 항목 등록':'키·토큰 등록',proposed,id=>{const ref=makeCredential(id);if(c&&role==='git'&&c.method==='https')ref.username=c.provider==='github'?'x-access-token':c.provider==='gitlab'?'oauth2':'';draft.credentials.push(ref);if(c){if(role==='api')c.api.credential=id;else c.credential=id}mark();if(connectionView()){renderInspector();renderMap()}else renderSecrets()},'credentials');
+ openAdd('키·토큰 참조 직접 등록',proposed,id=>{const ref=makeCredential(id);if(c&&role==='git'&&c.method==='https')ref.username=c.provider==='github'?'x-access-token':c.provider==='gitlab'?'oauth2':'';draft.credentials.push(ref);if(c){if(role==='api')c.api.credential=id;else c.credential=id}mark();if(connectionView()){renderInspector();renderMap()}else renderSecretFlow()},'credentials');
 }
 function openAdd(title,id,callback,collection){$('add-title').textContent=title;$('add-fields').replaceChildren();const input=field($('add-fields'),'ID · 영문 소문자·숫자·하이픈',id,null,null,'new-id');$('add-error').textContent='';$('confirm-add').onclick=()=>{try{const value=input.value.trim();if(!/^[a-z][a-z0-9-]{0,63}$/.test(value))throw Error('ID 형식을 확인하세요.');const list=collection?draft[collection]:title.includes('프로필')?draft.profiles:title.includes('인증')?draft.credentials:draft.connections;if(list.some(x=>x.id===value))throw Error('이미 사용 중인 ID입니다.');callback(value);$('add-modal').close()}catch(e){$('add-error').textContent=e.message}};$('add-modal').showModal();input.focus();}
-function addItem(){if(view==='profiles'){openAdd('폴더 규칙 추가',uniqueId('profile',draft.profiles),id=>{draft.profiles.push({id,name:'새 폴더 규칙',path:'~/'+id+'/',author:'',email:'',enabled:false});mark();renderProfiles()},'profiles')}else if(['secrets','passwords','remote-secrets'].includes(view))newCredential();else if(connectionView()){
+function addItem(){if(view==='profiles'){openAdd('폴더 규칙 추가',uniqueId('profile',draft.profiles),id=>{draft.profiles.push({id,name:'새 폴더 규칙',path:'~/'+id+'/',author:'',email:'',enabled:false});mark();renderProfiles()},'profiles')}else if(['secrets','secret-tokens','remote-secrets'].includes(view))newCredential();else if(connectionView()){
  $('add-title').textContent='연결 추가';$('add-fields').replaceChildren();$('add-error').textContent='';
  const selectedKind=connectionKind();
  const name=field($('add-fields'),'연결 이름','',null,null,'new-connection-name');name.placeholder=connectionKind()==='git'?'예: 개인 GitHub':'예: 개발 서버';
