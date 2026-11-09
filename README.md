@@ -301,6 +301,7 @@ python3 tests/dashboard.py
 node tests/dashboard-ui.js
 python3 tests/ssh_system.py
 python3 tests/secret_workflow.py
+python3 tests/terminal_handoff.py
 python3 tests/runbook.py
 python3 tests/tools.py
 python3 tests/desktop.py

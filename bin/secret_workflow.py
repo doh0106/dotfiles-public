@@ -18,6 +18,7 @@ CREATION_LOCK=threading.Lock()
 
 import configuration as cfg
 import auth
+import terminal_handoff
 from secret_store import read_bitwarden
 
 class Workflow:
@@ -45,7 +46,7 @@ class Workflow:
             try:unlocked=not probe.returncode and json.loads(probe.stdout).get('status')=='unlocked'
             except (ValueError,TypeError):unlocked=False
             if not unlocked:self.forget()
-        return dict(generation=self.generation,connected=bool(self.session),expires_in=max(0,int(self.expires-time.monotonic())) if self.session else 0,
+        return dict(terminals=terminal_handoff.available(),default_terminal=terminal_handoff.settings(),generation=self.generation,connected=bool(self.session),expires_in=max(0,int(self.expires-time.monotonic())) if self.session else 0,
             pending=bool(self.ticket and time.monotonic()<self.ticket_until),installed={x:bool(shutil.which(x)) for x in ('bw','ssh-add','ssh-keygen','ssh-agent')},
             agent_socket=(self.agent_env or {}).get('SSH_AUTH_SOCK'),managed_keys=len(self.added),prepared=[dict(record) for record in self.prepared.values()])
     def connect(self,launch=False):
@@ -57,11 +58,9 @@ class Workflow:
         request=Path(self.launch_dir.name)/'request.json'
         request.write_text(json.dumps(dict(origin=self.origin,ticket=self.ticket,path=os.environ.get('PATH',''),bw_appdata=os.environ.get('BITWARDENCLI_APPDATA_DIR'))));request.chmod(0o600)
         command=shlex.join([sys.executable,str(cfg.REPO/'bin/secret_session.py'),'--request',str(request)])
-        launched=False
-        if launch and sys.platform=='darwin':
-            script=Path(self.launch_dir.name)/'Bitwarden.command';script.write_text('#!/bin/sh\n'+command+'\n');script.chmod(0o700)
-            result=self.run(['/usr/bin/open','-a','Terminal',str(script)]);launched=result.returncode==0
-        return dict(command=command,launched=launched,expires_in=300)
+        mode='manual'
+        if launch:mode=terminal_handoff.open_input(command,terminal_handoff.settings(),self.run)
+        return dict(command=command,launched=mode!='manual',handoff_mode=mode,expires_in=300)
     def attach(self,ticket,session):
         if not self.ticket or time.monotonic()>=self.ticket_until or not isinstance(ticket,str) or not hmac.compare_digest(ticket,self.ticket):raise ValueError('연결 요청이 만료되었거나 이미 사용되었습니다.')
         self.ticket=None
@@ -184,9 +183,10 @@ class Workflow:
         with self.lock:
             if self.closed:raise ValueError('대시보드가 종료 중입니다.')
             action=request.get('action')
-            allowed={'status':set(),'connect':{'launch'},'search':{'query','purpose'},'prepare_public':{'item'},'save_public':{'id','path'},'supply_key':{'id','lifetime'},'check_token':{'item'},'cleanup':set(),'disconnect':set()}
+            allowed={'status':set(),'set_terminal':{'terminal'},'connect':{'launch'},'search':{'query','purpose'},'prepare_public':{'item'},'save_public':{'id','path'},'supply_key':{'id','lifetime'},'check_token':{'item'},'cleanup':set(),'disconnect':set()}
             if action not in allowed or set(request)-{'action'}!=allowed[action]:raise ValueError('지원하지 않는 비밀 관리 요청입니다.')
             if action=='status':return self.status()
+            if action=='set_terminal':return terminal_handoff.save(request['terminal'])
             if action=='connect':return self.connect(request['launch'] is True)
             if action=='search':return self.search(request['query'],request['purpose'])
             if action=='prepare_public':return self.prepare(request['item'])
