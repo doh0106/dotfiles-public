@@ -12,7 +12,7 @@ async function flowAction(request,done=()=>{}){
 function flowButton(title,request,done,disabled=false){const b=button(title,()=>flowAction(typeof request==='function'?request():request,done),'btn');b.disabled=secretFlow.busy||disabled||snapshot.design_preview;return b;}
 function flowStep(root,number,title,text){const box=groupBox((number?number+'. ':'')+title,root);if(text)box.append(el('p',text,'tool-state'));return box;}
 function flowVault(root){
- const box=flowStep(root,1,'Bitwarden 연결','로그인 정보는 터미널에서 입력합니다. 대시보드 연결은 15분 동안 유지하며 세션 값을 브라우저나 파일에 저장하지 않습니다.');
+ const box=flowStep(root,'','Bitwarden 연결','로그인 정보는 터미널에서 입력합니다. 대시보드 연결은 15분 동안 유지하며 세션 값을 브라우저나 파일에 저장하지 않습니다.');
  const status=secretFlow.status;
  box.append(badge(status?.connected?'저장소 연결됨 · '+Math.ceil(status.expires_in/60)+'분 남음':status?.pending?'터미널 연결 대기 중':'저장소 연결 필요',status?.connected?'green':'amber'));
  if(status&&['ssh-add','ssh-keygen','ssh-agent'].some(tool=>!status.installed[tool])){box.append(el('p','SSH 키 준비에는 OpenSSH 도구가 필요합니다. 설치 후 상태를 갱신하세요.','hint'));instructionLink(box,'OpenSSH 설치 안내','https://www.openssh.com/portable.html');}
@@ -27,7 +27,7 @@ function flowVault(root){
  return box;
 }
 function flowSearch(root,purpose){
- const search=secretFlow.searches[purpose],box=flowStep(root,2,'저장소 항목 검색·선택','이름으로 검색합니다. 목록에는 이름·항목 종류만 표시하며 개인키·토큰 본문은 표시하지 않습니다.');
+ const search=secretFlow.searches[purpose],box=flowStep(root,'','저장소 항목 검색·선택','이름으로 검색합니다. 목록에는 이름·항목 종류만 표시하며 개인키·토큰 본문은 표시하지 않습니다.');
  const input=field(box,'검색할 항목 이름',search.query,null,value=>{search.query=value},'vault-item-search');input.placeholder=purpose==='ssh-key'?'예: github ssh key':'예: github token';
  const lookup=()=>({action:'search',query:search.query,purpose});
  box.append(flowButton('항목 검색',lookup,result=>{search.items=result.items},!secretFlow.status?.connected));
@@ -36,8 +36,8 @@ function flowSearch(root,purpose){
  else box.append(el('p','2자 이상 검색어를 입력하세요. SSH 키는 SSH Key·Secure Note, 토큰은 Secure Note·Login 항목을 선택할 수 있습니다.','hint'));
 }
 function flowReference(item,purpose,username=null){
- let ref=draft.credentials.find(ref=>ref.source==='bitwarden'&&ref.item===item.item&&secretPurpose(ref)===purpose&&(username===null||ref.username===username));
- if(!ref){ref=makeCredential(uniqueId((purpose==='ssh-key'?'ssh-key-':'token-')+item.item.slice(0,8),draft.credentials));Object.assign(ref,{purpose,kind:item.kind,item:item.item,username:username||''});draft.credentials.push(ref)}ref.purpose=purpose;return ref;
+ let ref=draft.credentials.find(ref=>ref.source==='bitwarden'&&ref.item===item.item&&ref.kind===item.kind&&secretPurpose(ref)===purpose&&(username===null||ref.username===username));
+ if(!ref){ref=makeCredential(uniqueId((purpose==='ssh-key'?'ssh-key-':'token-')+(item.item.toLowerCase().replace(/[^a-z0-9-]/g,'-').slice(0,40)||'item'),draft.credentials));Object.assign(ref,{purpose,kind:item.kind,item:item.item,username:username||''});draft.credentials.push(ref)}ref.purpose=purpose;return ref;
 }
 function flowConnectionRecords(kind){return draft.connections.filter(c=>kind==='ssh'?c.method==='ssh':c.kind==='git'&&(c.method==='https'||c.api.enabled)).map(c=>({id:c.id,title:c.name,lines:connectionLines(c)}));}
 function flowRegisterKey(){
@@ -50,12 +50,13 @@ function flowRegisterKey(){
  mark();toast('키·공급 정책과 연결을 초안에 반영했습니다. 변경 검토에서 저장·적용하세요.');renderSecretFlow();
 }
 function renderSecretSshWorkflow(){
- const root=$('page-body');root.replaceChildren();renderKeyReadiness(root);const recurring=groupBox('작업할 때 · 인증 준비',root);recurring.append(el('p','저장한 설정은 유지됩니다. 보관소 연결이나 agent의 키가 만료되었을 때만 다시 준비하세요.','tool-state'));flowVault(recurring);
+ const root=$('page-body');root.replaceChildren();renderKeyReadiness(root);renderLegacyRegistrations(root);const recurring=groupBox('작업할 때 · 인증 준비',root);recurring.append(el('p','저장한 설정은 유지됩니다. 보관소 연결이나 agent의 키가 만료되었을 때만 다시 준비하세요.','tool-state'));flowVault(recurring);
  const setup=el('details',undefined,'group');setup.open=!draft.connections.some(c=>c.method==='ssh'&&sshMode(c)==='key');setup.append(el('summary','처음 한 번 · 키와 접속 설정 등록'),el('p','항목 선택·공개키 파일·사용 연결·정책을 저장합니다. 완료한 설정은 매번 만들지 않아도 됩니다.','hint'));root.append(setup);flowSearch(setup,'ssh-key');
  const box=flowStep(setup,'','공개키 파일 준비','공개키는 .pub 파일로 저장합니다. 공개키 파일 저장과 agent 공급 버튼은 즉시 실행됩니다. 설정 초안 저장과 별개이며 개인키는 파일로 복사하지 않습니다.');const key=secretFlow.key;
  if(!key){box.append(el('p','앞 단계에서 항목을 선택하면 공개키와 지문을 확인할 수 있습니다.','hint'));}
  else{
   box.append(el('strong',key.name),el('p',key.fingerprint,'tool-state'),el('pre',key.public,'long-pre'));
+  if(key.existing_connections?.length)box.append(el('p','기존 공개키와 일치 · '+key.existing_connections.join(', ')+' · 파일을 다시 만들지 않고 사용합니다.','hint'));
   const keyPath=field(box,'공개키 저장 위치',key.path,null,value=>{key.path=value;key.saved=false},'workflow-public-key');keyPath.placeholder='예: ~/.ssh/keys/personal.pub';
   box.append(flowButton(key.saved?'공개키 저장 확인됨 · 다시 확인':'공개키 파일 저장',()=>({action:'save_public',id:key.id,path:key.path}),result=>{secretFlow.key=result}));
   const supplyBox=groupBox('선택한 키를 이번 작업에 준비',recurring);
@@ -73,7 +74,7 @@ function renderSecretSshWorkflow(){
 }
 function renderSecretTokenWorkflow(){
  const root=$('page-body');root.replaceChildren();flowVault(root);flowSearch(root,'token');
- const box=flowStep(root,3,'토큰 공급 대상 지정','토큰 본문은 표시·저장하지 않습니다. 선택한 HTTPS Git 또는 API 도구가 요청할 때만 해당 호스트의 명령에 공급합니다.');const token=secretFlow.token;
+ const box=flowStep(root,'','토큰 공급 대상 지정','토큰 본문은 표시·저장하지 않습니다. 선택한 HTTPS Git 또는 API 도구가 요청할 때만 해당 호스트의 명령에 공급합니다.');const token=secretFlow.token;
  if(token)box.append(badge('한 줄 토큰 형식 확인됨','green'),el('p',token.name+' · 실제 권한·만료·서버 접근은 아직 확인하지 않았습니다.','hint'));
  field(box,'토큰 공급 경로',secretFlow.tokenDelivery,[['connection','HTTPS Git·GitHub/GitLab API'],['program','다른 프로그램의 환경변수']],value=>{secretFlow.tokenDelivery=value;renderSecretFlow()},'workflow-token-delivery');
  if(secretFlow.tokenDelivery==='program'){renderProgramSupply(box,token);renderSecretInventory(root,'token');return;}
@@ -112,4 +113,19 @@ function renderKeyReadiness(root){
   box.append(card);
  }
  if(!secretFlow.status)box.append(el('p','상태를 확인하는 중입니다.','hint'));
+}
+
+function renderLegacyRegistrations(root){
+ const legacy=secretFlow.status?.legacy;if(!legacy)return;
+ const box=groupBox('기존 bws 등록 키',root);
+ box.append(el('p','기존 등록 목록을 그대로 읽습니다. 항목을 다시 검색하거나 입력할 필요가 없습니다. 가져오기는 관리용 참조만 초안에 추가하며 기존 bws·인증은 유지합니다.','hint'));
+ for(const row of legacy.items){
+  const card=el('article',undefined,'auth-link-card'),ref=draft.credentials.find(ref=>ref.source==='bitwarden'&&ref.item===row.item&&ref.kind===row.kind&&secretPurpose(ref)==='ssh-key');
+  card.append(el('strong',row.name),badge(ref?'관리 설정에 있음':'기존 bws에 등록됨',ref?'green':'amber'),el('p',row.kind==='sshkey'?'SSH Key':'Secure Note','hint'),el('p',row.sources.join(' · '),'hint'));
+  const add=button(ref?'관리 설정에 가져옴':'관리 설정에 가져오기',()=>{flowReference(row,'ssh-key');mark();renderSecretFlow();toast('기존 키 참조를 초안에 가져왔습니다. 변경 검토에서 저장하세요.')},'btn');add.disabled=Boolean(ref)||secretFlow.busy||snapshot.design_preview;
+  card.append(add,flowButton('이 키 사용 · 기존 공개키 확인',{action:'prepare_registered',registration:row.id},result=>{secretFlow.key=result},!secretFlow.status?.connected));
+  card.append(el('p','키 준비는 Bitwarden 연결 후 가능합니다. 일치하는 기존 공개키는 자동으로 재사용하며 agent 공급은 별도로 선택합니다.','hint'));box.append(card);
+ }
+ if(!legacy.items.length)box.append(el('p','감지된 bws SSH 키 등록이 없습니다. 다른 목록을 사용한다면 대시보드를 시작할 때 DOTFILES_SECRETS_MANIFEST로 지정하세요.','hint'));
+ for(const warning of legacy.warnings)box.append(el('p',warning,'notice'));
 }

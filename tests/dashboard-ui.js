@@ -14,3 +14,14 @@ for(const host of ['github.com','gitlab.com:2222','GITHUB.COM'])assert.equal(con
 for(const host of ['github.com.example.net','git.example.net','https://github.com','github.com/org/repo.git'])assert.equal(context.knownGitSshHost({kind:'git',host}),false);
 assert.equal(context.knownGitSshHost({kind:'server',host:'github.com'}),false);
 console.log('PASS: connection-only preview, explicit shared scope, SSH alias isolation, official Git host suggestions');
+
+// Importing the same existing bws registration is idempotent and creates valid IDs.
+const workflow=fs.readFileSync(require('node:path').join(__dirname,'../dashboard/secret-workflows.js'),'utf8');
+vm.runInContext("const draft={credentials:[],connections:[]};",context);
+for(const [code,start,end] of [[source,'function makeCredential(','function newCredential('],[source,'function secretPurpose(','function renderSecrets('],[workflow,'function flowReference(','function flowConnectionRecords(']])vm.runInContext(code.slice(code.indexOf(start),code.indexOf(end)),context);
+vm.runInContext("const view='secrets';",context);
+const first=context.flowReference({item:'Personal SSH 키',kind:'note'},'ssh-key');
+assert.match(first.id,/^[a-z][a-z0-9-]{0,63}$/);
+assert.equal(context.flowReference({item:'Personal SSH 키',kind:'note'},'ssh-key'),first);
+assert.equal(vm.runInContext('draft.credentials.length',context),1);
+console.log('PASS: bws import reuses existing references and accepts existing item names');

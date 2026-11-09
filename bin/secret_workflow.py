@@ -19,6 +19,7 @@ CREATION_LOCK=threading.Lock()
 import configuration as cfg
 import auth
 import terminal_handoff
+import legacy_secrets
 from secret_store import read_bitwarden
 
 class Workflow:
@@ -55,7 +56,7 @@ class Workflow:
             path=Path(row['path']).expanduser()
             try:
                 resolved=path.resolve();info=resolved.stat()
-                if not resolved.is_relative_to(Path.home().resolve()) or info.st_uid!=os.getuid() or info.st_size>16384 or not row['path'].endswith('.pub'):continue
+                if not stat.S_ISREG(info.st_mode) or not resolved.is_relative_to(Path.home().resolve()) or info.st_uid!=os.getuid() or info.st_size>16384 or not row['path'].endswith('.pub'):continue
                 parts=resolved.read_text().split();public=' '.join(parts[:2])
                 if len(parts)<2 or not parts[0].startswith(('ssh-','ecdsa-','sk-')):continue
                 socket=row['socket'] or os.environ.get('SSH_AUTH_SOCK','')
@@ -76,8 +77,24 @@ class Workflow:
         record=self.prepare(ref['item']);stored=self.prepared[record['id']];stored['path']=c['publicKey']
         try:
             public=Path(c['publicKey']).expanduser().resolve();info=public.stat()
-            if public.is_relative_to(Path.home().resolve()) and info.st_uid==os.getuid() and info.st_size<=16384:stored['saved']=' '.join(public.read_text().split()[:2])==stored['public']
+            if stat.S_ISREG(info.st_mode) and public.is_relative_to(Path.home().resolve()) and info.st_uid==os.getuid() and info.st_size<=16384:stored['saved']=' '.join(public.read_text().split()[:2])==stored['public']
         except (OSError,UnicodeError):pass
+        return dict(stored)
+    def prepare_registered(self,ident):
+        registration=next((row for row in legacy_secrets.registrations()['items'] if row['id']==ident),None)
+        if not registration:raise ValueError('기존 bws 등록 목록을 새로 확인하세요.')
+        self.items[registration['item']]=dict(id=registration['item'],name=registration['name'],kind=registration['kind'])
+        record=self.prepare(registration['item']);stored=self.prepared[record['id']]
+        # Reuse a path only after the actual derived public key matches, never by alias/name.
+        matches=[]
+        for row in self.key_status():
+            try:
+                path=Path(row['path']).expanduser().resolve();info=path.stat()
+                if not path.is_relative_to(Path.home().resolve()) or not stat.S_ISREG(info.st_mode) or info.st_uid!=os.getuid() or info.st_size>16384:continue
+                if ' '.join(path.read_text().split()[:2])==stored['public']:matches.append(row)
+            except (OSError,UnicodeError,ValueError):continue
+        if matches:stored.update(path=matches[0]['path'],saved=True)
+        stored['existing_connections']=[row['name'] for row in matches]
         return dict(stored)
     def status(self):
         if self.session and time.monotonic()>=self.expires:self.forget()
@@ -88,7 +105,7 @@ class Workflow:
             try:unlocked=not probe.returncode and json.loads(probe.stdout).get('status')=='unlocked'
             except (ValueError,TypeError):unlocked=False
             if not unlocked:self.forget()
-        return dict(keys=self.key_status(),terminals=terminal_handoff.available(),default_terminal=terminal_handoff.settings(),generation=self.generation,connected=bool(self.session),expires_in=max(0,int(self.expires-time.monotonic())) if self.session else 0,
+        return dict(legacy=legacy_secrets.registrations(),keys=self.key_status(),terminals=terminal_handoff.available(),default_terminal=terminal_handoff.settings(),generation=self.generation,connected=bool(self.session),expires_in=max(0,int(self.expires-time.monotonic())) if self.session else 0,
             pending=bool(self.ticket and time.monotonic()<self.ticket_until),installed={x:bool(shutil.which(x)) for x in ('bw','ssh-add','ssh-keygen','ssh-agent')},
             agent_socket=(self.agent_env or {}).get('SSH_AUTH_SOCK'),managed_keys=len(self.added),prepared=[dict(record) for record in self.prepared.values()])
     def connect(self,launch=False):
@@ -225,12 +242,13 @@ class Workflow:
         with self.lock:
             if self.closed:raise ValueError('대시보드가 종료 중입니다.')
             action=request.get('action')
-            allowed={'status':set(),'set_terminal':{'terminal'},'connect':{'launch'},'search':{'query','purpose'},'prepare_saved':{'connection'},'prepare_public':{'item'},'save_public':{'id','path'},'supply_key':{'id','lifetime'},'check_token':{'item'},'cleanup':set(),'disconnect':set()}
+            allowed={'status':set(),'set_terminal':{'terminal'},'connect':{'launch'},'search':{'query','purpose'},'prepare_registered':{'registration'},'prepare_saved':{'connection'},'prepare_public':{'item'},'save_public':{'id','path'},'supply_key':{'id','lifetime'},'check_token':{'item'},'cleanup':set(),'disconnect':set()}
             if action not in allowed or set(request)-{'action'}!=allowed[action]:raise ValueError('지원하지 않는 비밀 관리 요청입니다.')
             if action=='status':return self.status()
             if action=='set_terminal':return terminal_handoff.save(request['terminal'])
             if action=='connect':return self.connect(request['launch'] is True)
             if action=='search':return self.search(request['query'],request['purpose'])
+            if action=='prepare_registered':return self.prepare_registered(request['registration'])
             if action=='prepare_saved':return self.prepare_saved(request['connection'])
             if action=='prepare_public':return self.prepare(request['item'])
             if action=='save_public':return self.save_public(request['id'],request['path'])

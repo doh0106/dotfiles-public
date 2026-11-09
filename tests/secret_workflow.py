@@ -137,6 +137,20 @@ else:sys.exit(9)
   state=cfg.defaults();state['profiles']=[];state['credentials']=[dict(id='key',purpose='ssh-key',source='bitwarden',kind='sshkey',item='key-1234',variable='',helper='cache',username='')]
   c=cfg.new_connection('','example');c.update(enabled=True,credential='key',publicKey=key['path']);state['connections']=[c];cfg.DATA.mkdir(parents=True,exist_ok=True);cfg.SETTINGS.write_text(json.dumps(state))
   self.workflow.forget();self.connect();prepared=self.workflow.prepare_saved(c['id']);self.assertTrue(prepared['saved']);self.assertEqual(prepared['path'],str(path));self.assertEqual(path.stat().st_mtime_ns,before)
+ def test_legacy_manifest_metadata_is_deduplicated_and_never_executes_actions(self):
+  import legacy_secrets
+  manifest=self.home/'secrets.json';rows=[dict(bw_name='key-1234',bw_type='sshkey',action='ssh-add'),dict(bw_name='key-1234',bw_type='sshkey',action='ssh-add'),dict(bw_name='do-not-run',bw_type='note',action='eval-env',value='SECRET-BODY'),dict(bw_name='not-private',bw_type='sshkey',action='ssh-add',field='public')];manifest.write_text(json.dumps(dict(secrets=rows)))
+  with patch.dict(os.environ,DOTFILES_SECRETS_MANIFEST=str(manifest)),patch.object(self.workflow,'run',side_effect=AssertionError('metadata must not run commands')):
+   listed=legacy_secrets.registrations();self.assertEqual(len(listed['items']),1);self.assertNotIn('SECRET-BODY',json.dumps(listed));self.assertNotIn('do-not-run',json.dumps(listed));self.assertTrue(listed['warnings']);self.assertEqual(json.loads(manifest.read_text())['secrets'],rows)
+ def test_legacy_key_preparation_reuses_exact_existing_public_key_only(self):
+  import legacy_secrets
+  manifest=self.home/'secrets.json';manifest.write_text(json.dumps(dict(secrets=[dict(bw_name='key-1234',bw_type='sshkey',action='ssh-add')])))
+  self.connect();before=(self.home/'fixture.pub').stat().st_mtime_ns
+  candidates=[dict(id='original',name='original-alias',path=str(self.home/'fixture.pub'))]
+  with patch.dict(os.environ,DOTFILES_SECRETS_MANIFEST=str(manifest)),patch.object(self.workflow,'key_status',return_value=candidates):
+   ident=legacy_secrets.registrations()['items'][0]['id'];result=self.workflow.dispatch(dict(action='prepare_registered',registration=ident));self.assertTrue(result['saved']);self.assertEqual(result['path'],str(self.home/'fixture.pub'));self.assertEqual(result['existing_connections'],['original-alias']);self.assertEqual((self.home/'fixture.pub').stat().st_mtime_ns,before)
+   (self.home/'fixture.pub').write_text('ssh-ed25519 DIFFERENT');result=self.workflow.prepare_registered(ident);self.assertFalse(result['saved']);self.assertEqual(result['existing_connections'],[])
+  with self.assertRaises(ValueError):self.workflow.prepare_registered('not-in-manifest')
  def test_terminal_handoff_keeps_passwords_and_session_out_of_output(self):
   import secret_session,io,contextlib
   handoff=self.workflow.connect();request=Path(self.workflow.launch_dir.name)/'request.json'
