@@ -104,7 +104,7 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         try:
             if path=='/api/state':self.reply(200,snapshot(design_preview=getattr(self.server,'design_preview',False),catalog_url=getattr(self.server,'design_catalog_url',None)))
-            elif path in ('/','/index.html','/app.js','/inventory.js','/environment.js','/desktop.js','/style.css','/design/dashboard-design.js','/design/preview.js','/design/preview.css','/onboarding.js','/navigation.js','/tailscale.js','/design/design-inspector.js','/design/design-inspector.css'):
+            elif path in ('/','/index.html','/app.js','/inventory.js','/record-picker.js','/change-center.js','/environment.js','/desktop.js','/style.css','/design/dashboard-design.js','/design/preview.js','/design/preview.css','/onboarding.js','/navigation.js','/tailscale.js','/design/design-inspector.js','/design/design-inspector.css'):
                 file=REPO/'dashboard'/('index.html' if path in ('/','/index.html') else path[1:]);self.reply(200,file.read_bytes(),{'html':'text/html','js':'application/javascript','css':'text/css'}[file.suffix[1:]]+'; charset=utf-8')
             else:self.reply(404,{'error':'찾을 수 없습니다.'})
         except (ValueError,OSError,KeyError,TypeError) as exc:self.reply(400,{'error':'설정 읽기 실패: '+str(exc)})

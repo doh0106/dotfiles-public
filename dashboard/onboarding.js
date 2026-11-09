@@ -1,18 +1,21 @@
 'use strict';
 // Setup acknowledgements are per-machine metadata, never proof of a live login.
-labels.overview='환경 개요';
+labels.overview='환경 현황';
 let progressBasis=null,progressSnapshot=null,recordingSetup=false;
 const setupSteps=[
  {id:'appearance',title:'셸과 테마 선택',view:'appearance',text:'Oh My Zsh와 테마를 쓸지 정하세요. 기본 셸을 그대로 사용해도 됩니다.'},
  {id:'tools',title:'필요한 도구 선택',view:'tools',text:'이동·검색·언어 도구 중 필요한 것만 켜세요. 설치 명령은 마지막 적용 단계에 나옵니다.'},
- {id:'profiles',title:'작업 폴더와 Git 작성자 설정',view:'profiles',text:'개인·회사 프로젝트 폴더와 Git 이름·이메일을 정하세요. Git 작성자 기능을 끄고 진행할 수도 있습니다.'},
- {id:'connections',title:'Git 호스트 접속 설정',view:'connections',text:'Git 호스트의 접속 방식과 키·토큰의 보관 위치를 지정하세요. 접속이 필요 없으면 추가하지 않아도 됩니다.'}
+ {id:'connections',title:'Git 호스트 연결',view:'connections',text:'Git 호스트·접속 방식·인증 참조를 정하세요. 인증 참조와 키 수명은 연결 상세에서 설정하며, 접속이 필요 없으면 추가하지 않아도 됩니다.'},
+ {id:'profiles',title:'작성자·적용 규칙 · 선택',view:'profiles',text:'필요한 경우 폴더 규칙을 만들고 앞에서 등록한 Git 연결을 지정하세요. 커밋 작성자 이름·이메일도 폴더별로 정할 수 있습니다. 자동 적용이 필요 없으면 이 단계는 설정 없이 확인하고 넘어가세요.'}
 ];
 function setupSection(state,id){
  if(id==='appearance')return state.features.ohmyzsh;
  if(id==='tools')return Object.fromEntries(Object.entries(state.features).filter(([key])=>key!=='ohmyzsh'));
- if(id==='profiles')return {git:state.git,profiles:state.profiles};
- if(id==='connections')return {git:state.git,profiles:state.profiles,connections:state.connections,credentials:state.credentials,session:state.session};
+ if(id==='profiles')return {git:state.git,profiles:state.profiles,connection_scopes:state.connections.filter(c=>c.kind==='git'&&c.profile).map(c=>({id:c.id,profile:c.profile}))};
+ if(id==='connections'){
+  const connections=state.connections.filter(c=>c.kind==='git'),refs=new Set(connections.flatMap(c=>[c.credential,c.api.enabled?c.api.credential:'']).filter(Boolean));
+  return {connections:connections.map(({profile,...connection})=>connection),credentials:state.credentials.filter(ref=>refs.has(ref.id)),session:connections.some(c=>c.enabled&&c.method==='ssh')?state.session:null};
+ }
  return state;
 }
 function setupDone(id){
@@ -24,7 +27,7 @@ function setupApplied(){return setupSaved()&&setupDone('apply')&&setupDone('shel
 function setupSummary(id){
  if(id==='appearance')return draft.features.ohmyzsh.enabled?'Oh My Zsh · '+draft.features.ohmyzsh.values.theme:'Oh My Zsh를 사용하지 않는 선택';
  if(id==='tools'){const names=snapshot.definitions.filter(f=>f.id!=='ohmyzsh'&&draft.features[f.id]?.enabled).map(f=>f.name);return names.length?names.join(', '):'추가 도구를 선택하지 않은 상태';}
- if(id==='profiles')return draft.git.enabled?draft.profiles.filter(p=>p.enabled).map(p=>p.name+' · '+p.path+' · '+(p.author||'이름 미입력')+' / '+(p.email||'이메일 미입력')).join('\n'):'폴더별 Git 작성자 기능 꺼짐';
+ if(id==='profiles')return draft.profiles.filter(p=>p.enabled).map(p=>{const names=draft.connections.filter(c=>c.kind==='git'&&c.profile===p.id).map(c=>c.name);return p.name+' · '+p.path+' · '+(names.length?names.join(', '):'자동 적용할 연결 없음')+' · '+(draft.git.enabled?(p.author||'이름 미입력')+' / '+(p.email||'이메일 미입력'):'작성자 직접 지정 안 함')}).join('\n')||'폴더 규칙을 사용하지 않는 선택';
  return draft.connections.some(c=>c.enabled&&c.kind==='git')?draft.connections.filter(c=>c.enabled&&c.kind==='git').map(c=>c.name+' · '+c.method.toUpperCase()+' · '+c.host).join('\n'):'사용하도록 설정한 Git 연결 없음';
 }
 async function confirmSetup(id,done=true){
@@ -52,12 +55,12 @@ function setupChecks(parent){
  if(!setupSaved())parent.append(el('p','초안을 먼저 검토·저장해야 적용 완료를 기록할 수 있습니다.','hint'));
 }
 function renderSetupFlow(){
- const root=$('page-body');root.replaceChildren();root.append(button('← 환경 개요',()=>navigate('overview'),'quiet'));
+ const root=$('page-body');root.replaceChildren();root.append(button('← 환경 현황',()=>navigate('overview'),'quiet'));
  const complete=[...setupSteps.map(step=>setupDone(step.id)),setupSaved(),setupApplied()],count=complete.filter(Boolean).length,next=complete.indexOf(false);
- const hero=el('section',undefined,'setup-hero');hero.append(el('span','처음 사용하는 기기 설정','setup-eyebrow'),el('h2',next<0?'기본 환경 설정을 마쳤어요':(next+1)+'. '+(setupSteps[next]?.title||(next===4?'선택한 설정 검토·저장':'도구 설치·설정 적용·접속 확인'))));
+ const hero=el('section',undefined,'setup-hero');hero.append(el('span','처음 설정 · 순서와 진행 기록','setup-eyebrow'),el('h2',next<0?'기본 환경 설정을 마쳤어요':(next+1)+'. '+(setupSteps[next]?.title||(next===4?'선택한 설정 검토·저장':'도구 설치·설정 적용·접속 확인'))));
  hero.append(el('p',next<0?'아래의 외부 서비스와 프로젝트 실행 환경은 필요할 때 추가하세요.':next<4?setupSteps[next].text:next===4?'지금까지 선택한 내용을 검토하고 설정 파일을 생성하세요. 저장한 뒤 실제 환경에 적용합니다.':'적용 안내의 명령을 순서대로 실행하세요. 도구 설치, configure, 새 셸, 접속 확인이 남아 있습니다.'));
  const meter=el('progress');meter.max=6;meter.value=count;meter.setAttribute('aria-label','기본 설정 진행');hero.append(meter,el('p',count+' / 6단계 관리 설정 확인 기록 · 현재 컴퓨터의 설치 완료율이 아닙니다.','hint'));
- if(next>=0)hero.append(button(next===4?'변경 검토 · 저장하기':'지금 할 일로 이동 →',()=>next===4?review():navigate(setupSteps[next]?.view||'plan'),'btn primary'));
+ if(next>=0)hero.append(button(next===4?'변경 검토·적용으로 이동':'지금 할 일로 이동 →',()=>next===4?navigate('plan'):navigate(setupSteps[next]?.view||'plan'),'btn primary'));
  root.append(hero);
  const list=el('ol',undefined,'setup-list');list.setAttribute('aria-label','처음 설정 순서');root.append(list);
  for(let i=0;i<6;i++){
@@ -65,8 +68,8 @@ function renderSetupFlow(){
   const head=el('div',undefined,'between setup-step-head');head.append(el('h3',(i+1)+'. '+(step?.title||(i===4?'선택한 설정 검토·저장':'도구 설치·설정 적용·접속 확인'))),badge(complete[i]?(i<4?'선택 확인됨':i===4?'저장됨':'사용자 적용 확인'):i===next?'지금 할 일':'아직 확인 안 함'));row.append(head);
   row.append(el('p',step?setupSummary(step.id):i===4?setupSaved()?'현재 선택이 설정 파일로 저장되어 있습니다.':diff(baseline,draft).length?'저장하지 않은 변경이 있습니다.':'이 기기에 설정을 아직 저장하지 않았습니다.':'저장과 실제 적용을 구분합니다. 아래 실행 항목을 확인하세요.','tool-state'));
   if(step){row.append(button(complete[i]?'선택 다시 보기':'선택하러 가기 →',()=>navigate(step.view)));if(complete[i])row.append(button('확인 취소',()=>confirmSetup(step.id,false),'quiet'));}
-  else if(i===4)row.append(button('변경 검토 · 저장',review));
-  else {row.append(button('적용 안내 열기 →',()=>navigate('plan')));setupChecks(row);}
+  else if(i===4)row.append(button('변경 검토·적용으로 이동 →',()=>navigate('plan')));
+  else row.append(el('p','변경 검토·적용에서 명령을 실행한 뒤 적용 확인을 기록합니다. 이 화면에는 그 진행 상태가 표시됩니다.','hint'),button('변경 검토·적용으로 이동 →',()=>navigate('plan')));
   list.append(row);
  }
  const optional=groupBox('기본 설정 다음 · 필요한 기능만 추가',root);
@@ -80,14 +83,14 @@ function renderSetupFlow(){
 };
 function attachSetupGuide(){
  if(!draft||!setupMode||['overview','setup'].includes(view)||$('setup-page-guide'))return;
- const step=setupSteps.find(item=>item.view===view);if(!step&&view!=='plan')return;
+ const step=setupSteps.find(item=>item.view===view);
  const root=$('page-body'),guide=el('section',undefined,'setup-page-guide');guide.id='setup-page-guide';
- guide.append(button('← 새 컴퓨터 설정 순서',()=>navigate('setup'),'quiet'));
+ guide.append(button('← 처음 설정 안내',()=>navigate('setup'),'quiet'));
  if(step){
   guide.append(el('h2',(setupSteps.indexOf(step)+1)+' / 6 · '+step.title),el('p',step.text,'tool-state'));
   const done=setupDone(step.id);guide.append(badge(done?'이 선택은 확인한 상태':'선택 후 아래 버튼으로 확인하세요'));
-  const action=button(done?'선택 확인 · 다음 단계 →':'이 선택으로 진행 →',async()=>{await confirmSetup(step.id);if(setupDone(step.id)){const next=setupSteps[setupSteps.indexOf(step)+1];next?navigate(next.view):review()}});action.disabled=snapshot.design_preview;guide.append(action);
- }else {guide.append(el('h2','6 / 6 · 명령 실행 후 확인'),el('p','위에서 저장한 설정을 아래 명령으로 적용합니다. 실행이 끝나면 여기에 확인을 남기세요.','tool-state'));setupChecks(guide);}
+  const action=button(done?'선택 확인 · 다음 단계 →':'이 선택으로 진행 →',async()=>{await confirmSetup(step.id);if(setupDone(step.id)){const next=setupSteps[setupSteps.indexOf(step)+1];next?navigate(next.view):navigate('plan')}});action.disabled=snapshot.design_preview;guide.append(action);
+ }else {guide.append(el('h2','처음 설정 · 필요한 기능 확인'),el('p','이 화면은 선택 기능 또는 공통 설정입니다. 처음 설정 안내에서 진행 기록을 이어갈 수 있습니다.','tool-state'));}
  root.prepend(guide);
 }
 const setupMark=mark;

@@ -4,6 +4,7 @@ const existingNames={git:'Git 작성자 규칙','git-ssh':'Git SSH 연결',ssh:'
 function hostInventory(){return snapshot.host_state||{tools:[],candidates:[],references:[],warnings:[]};}
 function hostCandidates(categories){return hostInventory().candidates.filter(item=>categories.includes(item.category));}
 function importedReferences(categories){return hostInventory().references.filter(item=>categories.includes(item.category));}
+function referenceLabel(item){return item.category==='git'?'Git 작성자':item.label;}
 function referenceStatus(item){return ({current:'원본 참조 중',changed:'원본 변경됨 · 다시 검토',missing:'원본 감지 안 됨'})[item.status]||'아직 가져오지 않음';}
 function observationPair(parent,label,detected,managed){
  const block=el('div',undefined,'observation-pair');block.append(el('strong',label));
@@ -15,10 +16,10 @@ function renderInventoryOverview(){
  const hero=el('section',undefined,'setup-hero');hero.append(el('span','현재 환경과 관리 설정','setup-eyebrow'),el('h2','이미 쓰는 환경부터 확인하세요'),el('p','현재 감지는 설치된 프로그램과 기존 설정을 읽은 결과입니다. 대시보드 관리는 저장한 선택과 가져온 기존 설정 참조입니다.'));
  hero.append(button('기존 설정 검토·가져오기 →',()=>navigate('existing'),'btn primary'),button('현재 상태 다시 감지',refreshHostInventory));
  if(inventory.observed_at)hero.append(el('p','감지 시각: '+new Date(inventory.observed_at).toLocaleString('ko-KR')+' · 로컬 설정 기준 · 실제 인증·접속 미검증','hint'));root.append(hero);
- const pending=diff(baseline,draft).length,management=groupBox('대시보드 관리 설정',root);
+ const pending=diff(baseline,draft).length,management=groupBox('변경 사항',root);
  management.append(el('p',(snapshot.revision==='new'?'직접 관리 설정을 아직 저장하지 않았습니다. 기존 환경과 가져온 참조는 그대로 유지됩니다.':pending?'저장하지 않은 변경 '+pending+'개가 있습니다.':'관리 설정이 저장되어 있습니다. 실제 적용 여부는 별도로 확인하세요.'),'tool-state'));
- management.append(button('새 컴퓨터 설정·진행 기록 →',()=>navigate('setup')),button('설정 적용 안내 →',()=>navigate('plan')));
- if(pending)management.append(button('초안 변경 검토·저장',review,'btn primary'));
+ management.append(button('변경 검토·적용으로 이동 →',()=>navigate('plan',{primary:true})));const start=groupBox('처음 설정',root);start.append(el('p','처음 사용하는 컴퓨터의 설정 순서와 진행 기록을 확인합니다. 기존 환경을 유지하며 필요한 항목부터 진행할 수도 있습니다.','tool-state'),button('처음 설정 안내 열기 →',()=>navigate('setup',{primary:true})));
+ if(pending)management.append(button('초안 변경 검토',()=>navigate('plan',{primary:true}),'btn primary'));
  const grid=el('div',undefined,'environment-grid');root.append(grid);
  const supported=snapshot.definitions.filter(item=>item.id!=='colors'),installed=supported.filter(item=>item.installed),selected=supported.filter(item=>draft.features[item.id]?.enabled);
  const apps=groupBox('앱·도구',grid),shell=hostCandidates(['shell'])[0];
@@ -66,7 +67,7 @@ function candidateDetails(parent,item){
 }
 function renderExistingSettings(){
  const root=$('page-body');root.replaceChildren();const inventory=hostInventory();
- root.append(button('← 환경 개요',()=>navigate('overview'),'quiet'));
+ root.append(button('← 환경 현황',()=>navigate('overview'),'quiet'));
  explanation(root,'원본을 유지하는 참조로 가져옵니다.','선택한 설정의 출처와 식별자만 관리 목록에 등록합니다. Git 작성자 조건·SSH 옵션·셸 로드 순서를 바꾸거나, 키·토큰을 복사하거나, 프로그램을 설치하지 않습니다. 새 직접 관리 설정은 각 메뉴에서 따로 추가할 수 있습니다.');
  const actions=el('div',undefined,'existing-import-actions');actions.append(button('현재 상태 다시 감지',refreshHostInventory));const selected=el('span',undefined,'hint');selected.id='existing-selected-count';actions.append(selected);root.append(actions);
  const submit=button('선택한 설정을 참조로 가져오기',()=>applyExistingSelection(),'btn primary');submit.id='existing-import-submit';root.append(submit);
@@ -77,13 +78,13 @@ function renderExistingSettings(){
   for(const item of items){
    const ref=inventory.references.find(record=>record.id===item.id),row=el('section',undefined,'existing-setting');row.dataset.existingId=item.id;
    const label=el('label',undefined,'existing-selection'),input=el('input');input.type='checkbox';input.value=item.id;input.checked=existingSelection.has(item.id);input.disabled=ref?.status==='current'||snapshot.design_preview;
-   input.onchange=()=>{input.checked?existingSelection.add(item.id):existingSelection.delete(item.id);updateSelection()};label.append(input,document.createTextNode(item.label));row.append(label,badge(ref?referenceStatus(ref):'가져오기 전'));
+   input.onchange=()=>{input.checked?existingSelection.add(item.id):existingSelection.delete(item.id);updateSelection()};label.append(input,document.createTextNode(referenceLabel(item)));row.append(label,badge(ref?referenceStatus(ref):'가져오기 전'));
    candidateDetails(row,item);
    if(ref)row.append(button('관리 목록에서 참조 해제',()=>removeExistingReference(item.id),'quiet'));
    group.append(row);
   }
  }
- for(const ref of inventory.references.filter(item=>item.status==='missing')){const row=groupBox(ref.label,root);row.append(badge('원본 감지 안 됨'),el('p',ref.source,'source-path'),button('관리 목록에서 참조 해제',()=>removeExistingReference(ref.id),'quiet'))}
+ for(const ref of inventory.references.filter(item=>item.status==='missing')){const row=groupBox(referenceLabel(ref),root);row.append(badge('원본 감지 안 됨'),el('p',ref.source,'source-path'),button('관리 목록에서 참조 해제',()=>removeExistingReference(ref.id),'quiet'))}
  if(!inventory.candidates.length)root.append(el('p','가져올 기존 설정이 감지되지 않았습니다. Git·SSH·셸 설정은 각 메뉴에서 직접 추가할 수 있습니다.','hint'));
  for(const warning of inventory.warnings)root.append(el('p',warning,'notice'));
  root.append(el('p','참조 등록은 이 기기의 existing-settings.json에 저장됩니다. 상단 변경 검토는 별도의 직접 관리 설정 초안을 저장합니다.','hint'));updateSelection();
@@ -104,7 +105,7 @@ function attachExistingSummary(){
  const refs=importedReferences(categories),detected=hostCandidates(categories),panel=el('section',undefined,'existing-domain-summary');panel.id='existing-domain-summary';
  const heading=el('h2','기존 설정 감지 '+detected.length+'개 · 가져온 참조 '+refs.length+'개');panel.append(heading);
  panel.append(el('p','직접 관리 설정과 별개입니다. 가져온 참조는 원본의 규칙과 인증 방식을 유지합니다.','hint'));
- for(const ref of refs){const item=detected.find(candidate=>candidate.id===ref.id),row=el('details',undefined,'existing-reference');row.append(el('summary',ref.label+' · '+referenceStatus(ref)));if(item)candidateDetails(row,item);else row.append(el('p',ref.source,'source-path'));panel.append(row)}
+ for(const ref of refs){const item=detected.find(candidate=>candidate.id===ref.id),row=el('details',undefined,'existing-reference');row.append(el('summary',referenceLabel(ref)+' · '+referenceStatus(ref)));if(item)candidateDetails(row,item);else row.append(el('p',ref.source,'source-path'));panel.append(row)}
  panel.append(button('기존 설정 검토·가져오기 →',()=>navigate('existing')));
  const tabs=$('domain-navigation');if(tabs)tabs.after(panel);else $('page-body').prepend(panel);
 }

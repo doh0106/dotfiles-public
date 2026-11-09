@@ -82,7 +82,7 @@ def git_configuration():
         identity={k[5:]:v for k,v in rows if k in ('user.name','user.email')}
         if identity.get('name') or identity.get('email'):
             # Do not flatten hasconfig/remote or case-insensitive gitdir rules.
-            result.append(candidate('git','Git 작성자 · '+path.stem,path,condition,
+            result.append(candidate('git','Git 작성자',path,condition,
                 dict(author=identity.get('name',''),email=identity.get('email',''),condition=condition)))
         for name,value in rows:
             if name=='include.path':visit(expand_path(value,path.parent),condition,depth+1)

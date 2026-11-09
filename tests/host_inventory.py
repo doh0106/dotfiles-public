@@ -71,6 +71,7 @@ source "$(touch SHOULD_NOT_RUN)"
         with patch.object(Path,'read_text',guarded):state=inventory.observe()
         git=[item for item in state['candidates'] if item['category']=='git']
         self.assertEqual(len(git),2)
+        self.assertTrue(all(item['label']=='Git 작성자' for item in git))
         personal=next(item for item in git if item['details']['author']=='Personal Example')
         self.assertEqual(len(personal['details']['conditions']),2)
         self.assertTrue(all(rule.startswith('hasconfig:remote.') for rule in personal['details']['conditions']))

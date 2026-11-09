@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Ensure setup review/apply acknowledgements survive reload without claiming live auth."""
 import copy
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -40,5 +41,28 @@ class SetupProgressTests(unittest.TestCase):
     def test_preview_ignores_real_progress(self):
         progress.record('appearance',True,self.state,'new')
         self.assertFalse(progress.status(self.state,True)['appearance']['done'])
+    def test_connection_then_optional_folder_rule_does_not_repeat_connection_review(self):
+        connection=cfg.new_connection('', 'public-git')
+        connection.update(enabled=True,method='https')
+        self.state['connections']=[connection]
+        progress.record('connections',True,self.state,'new')
+        self.state['profiles'][0].update(path='~/projects/',author='Example',email='example@example.org')
+        connection['profile']='personal'
+        self.assertTrue(progress.status(self.state)['connections']['done'])
+        progress.record('profiles',True,self.state,'new')
+        result=progress.status(self.state)
+        self.assertTrue(result['connections']['done']);self.assertTrue(result['profiles']['done'])
+        connection['profile']=''
+        self.assertFalse(progress.status(self.state)['profiles']['done'])
+        self.assertTrue(progress.status(self.state)['connections']['done'])
+        connection['host']='other.example.org'
+        self.assertFalse(progress.status(self.state)['connections']['done'])
+    def test_legacy_writer_review_survives_until_a_folder_assignment_is_added(self):
+        old=hashlib.sha256(json.dumps({k:self.state[k] for k in ('git','profiles')},sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        cfg.DATA.mkdir()
+        (cfg.DATA/'setup-progress.json').write_text(json.dumps({'schema':1,'steps':{'profiles':{'fingerprint':old}}}))
+        self.assertTrue(progress.status(self.state)['profiles']['done'])
+        self.state['connections']=[cfg.new_connection('personal','scoped')]
+        self.assertFalse(progress.status(self.state)['profiles']['done'])
 
 if __name__=='__main__':unittest.main(verbosity=2)

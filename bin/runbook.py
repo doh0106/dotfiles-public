@@ -45,7 +45,7 @@ def build(state,dependencies,repo,data):
     connection_kinds={c['kind'] for c in active}
     connection_view='servers' if connection_kinds=={'server'} else 'connections' if connection_kinds=={'git'} else 'overview'
     if materials:stage('materials','인증 재료 확인','공개키 파일, 비밀정보 항목의 이름·형식을 확인합니다. 실제 비밀값이나 vault 상태는 이 화면에서 조회하지 않습니다.',materials,connection_view)
-    stage('save','검토 후 설정 파일 생성','대시보드의 「변경 검토 → 저장 · 설정 파일 생성」을 누르세요. 저장한 설정을 기준으로 다음 명령을 실행합니다.',[block('저장과 실행은 별개','초안 미리보기는 파일을 바꾸지 않습니다. 이미 같은 값을 저장했다면 그대로 다음 단계로 진행하세요.')])
+    stage('save','검토 후 설정 파일 생성','변경 검토·적용 화면에서 내용을 검토한 뒤 「저장 · 설정 파일 생성」을 누르세요. 저장한 설정을 기준으로 다음 명령을 실행합니다.',[block('저장과 실행은 별개','초안 미리보기는 파일을 바꾸지 않습니다. 이미 같은 값을 저장했다면 그대로 다음 단계로 진행하세요.')])
     missing=[d for d in dependencies if not d['installed']]
     installed=[d for d in dependencies if d['installed']]
     installation=[]

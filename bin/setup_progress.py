@@ -5,13 +5,16 @@ import json
 import fcntl
 import configuration as cfg
 
-STEPS=('appearance','tools','profiles','connections','apply','shell','auth')
+STEPS=('appearance','tools','connections','profiles','apply','shell','auth')
 
 def basis(state,step):
     if step=='appearance':return state['features']['ohmyzsh']
     if step=='tools':return {k:v for k,v in state['features'].items() if k!='ohmyzsh'}
-    if step=='profiles':return {k:state[k] for k in ('git','profiles')}
-    if step=='connections':return {k:state[k] for k in ('git','profiles','connections','credentials','session')}
+    if step=='profiles':return dict(git=state['git'],profiles=state['profiles'],connection_scopes=[dict(id=c['id'],profile=c['profile']) for c in state['connections'] if c['kind']=='git' and c['profile']])
+    if step=='connections':
+        connections=[c for c in state['connections'] if c['kind']=='git']
+        refs={ref for c in connections for ref in [c['credential'],c['api']['credential'] if c['api']['enabled'] else ''] if ref}
+        return dict(connections=[{k:v for k,v in c.items() if k!='profile'} for c in connections],credentials=[ref for ref in state['credentials'] if ref['id'] in refs],session=state['session'] if any(c['enabled'] and c['method']=='ssh' for c in connections) else None)
     return state
 
 def fingerprint(state,step):
@@ -25,7 +28,11 @@ def read():
 
 def status(state,preview=False):
     records={} if preview else read()
-    return {step:dict(done=records.get(step,{}).get('fingerprint')==fingerprint(state,step),completed_at=records.get(step,{}).get('completed_at')) for step in STEPS}
+    result={step:dict(done=records.get(step,{}).get('fingerprint')==fingerprint(state,step),completed_at=records.get(step,{}).get('completed_at')) for step in STEPS}
+    if not any(c['kind']=='git' and c['profile'] for c in state['connections']):
+        legacy=hashlib.sha256(json.dumps({k:state[k] for k in ('git','profiles')},sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        if records.get('profiles',{}).get('fingerprint')==legacy:result['profiles']['done']=True
+    return result
 
 def record(step,completed,state,revision):
     if step not in STEPS or not isinstance(completed,bool):raise ValueError('설정 단계 형식 오류')

@@ -2,38 +2,35 @@
 // Navigation owns presentation only. Settings, credentials and progress keep their owners.
 let setupMode=false;
 const domains=[
- {id:'apps',title:'앱·도구',icon:'shell',start:'tools',intro:'필요한 프로그램을 준비하고 터미널·셸과 AI 작업 도구를 설정합니다.',pages:[['tools','프로그램 설치'],['appearance','터미널·셸·테마'],['agents','AI 도구·스킬']]},
- {id:'git',title:'Git 설정',icon:'git',start:'connections',intro:'Git 호스트 접속과 폴더별 작성자 설정을 관리합니다. 두 설정은 독립적으로 사용할 수 있습니다.',pages:[['connections','Git 호스트 연결'],['profiles','작성자·적용 규칙'],['secrets','인증 참조'],['sessions','키·세션']]},
- {id:'remote',title:'원격 접속',icon:'globe',start:'servers',intro:'터미널로 접속할 컴퓨터를 등록하고 SSH와 필요한 네트워크 연결을 준비합니다.',pages:[['servers','SSH 접속 대상'],['tailscale','Tailscale·집 WSL'],['remote-secrets','인증 참조'],['remote-sessions','키·세션']]},
+ {id:'apps',title:'앱·도구',icon:'shell',start:'appearance',intro:'필요한 프로그램을 준비하고 터미널·셸과 AI 작업 도구를 설정합니다.',pages:[['appearance','터미널·셸·테마'],['tools','프로그램 설치'],['agents','AI 도구·스킬']]},
+ {id:'git',title:'Git',icon:'git',start:'connections',intro:'Git 호스트 접속과 폴더별 작성자 설정을 관리합니다. 두 설정은 독립적으로 사용할 수 있습니다.',pages:[['connections','Git 호스트 연결'],['profiles','작성자·적용 규칙 · 선택']],utilities:[['secrets','인증 참조 모아보기'],['sessions','공통 키·세션 정책']]},
+ {id:'remote',title:'원격 접속',icon:'globe',start:'servers',intro:'터미널로 접속할 컴퓨터를 등록하고 SSH와 필요한 네트워크 연결을 준비합니다.',pages:[['servers','SSH 접속 대상'],['tailscale','Tailscale·집 WSL']],utilities:[['remote-secrets','인증 참조 모아보기'],['remote-sessions','공통 키·세션 정책']]},
  {id:'runtime',title:'프로젝트 실행 환경',icon:'code',start:'runtime',intro:environmentViews.runtime[1],pages:[['runtime','프로젝트 실행 환경']]},
  {id:'services',title:'외부 서비스',icon:'link',start:'services',intro:environmentViews.services[1],pages:[['services','외부 서비스']]}
 ];
-Object.assign(labels,{existing:'기존 설정 가져오기',overview:'환경 개요',setup:'새 컴퓨터 설정',agents:'AI 도구·스킬',servers:'SSH 접속 대상','remote-secrets':'인증 참조','remote-sessions':'키·세션',runtime:'프로젝트 실행 환경',services:'외부 서비스',tools:'프로그램 설치',appearance:'터미널·셸·테마',profiles:'작성자·적용 규칙',connections:'Git 호스트 연결',secrets:'인증 참조',sessions:'키·세션'});
-function domainFor(page){return domains.find(domain=>domain.pages.some(([id])=>id===page));}
-function primaryButton(title,id,icon){const item=button(title,()=>navigate(id));item.dataset.view=id;item.disabled=!draft;if(icon)item.insertAdjacentHTML('afterbegin',svg[icon]);return item;}
+Object.assign(labels,{existing:'기존 설정 가져오기',overview:'환경 현황',plan:'변경 검토·적용',setup:'처음 설정',agents:'AI 도구·스킬',servers:'SSH 접속 대상','remote-secrets':'인증 참조','remote-sessions':'키·세션',runtime:'프로젝트 실행 환경',services:'외부 서비스',tools:'프로그램 설치',appearance:'터미널·셸·테마',profiles:'작성자·적용 규칙',connections:'Git 호스트 연결',secrets:'인증 참조',sessions:'키·세션'});
+function domainFor(page){return domains.find(domain=>[...domain.pages,...(domain.utilities||[])].some(([id])=>id===page));}
+function primaryButton(title,id,icon){const item=button(title,()=>navigate(id,{primary:true}));item.dataset.view=id;item.setAttribute('aria-label',title);item.disabled=!draft;if(icon)item.insertAdjacentHTML('afterbegin',svg[icon]);return item;}
 function buildNavigation(){
- const nav=document.querySelector('.nav');nav.replaceChildren(primaryButton('환경 개요','overview','code'));
- const group=el('div',undefined,'nav-domain-group');group.setAttribute('role','group');group.setAttribute('aria-label','환경 설정');
- group.append(el('div','환경 설정','navlabel'));
- for(const domain of domains)group.append(primaryButton(domain.title,domain.start,domain.icon));
- nav.append(group);
+ const nav=document.querySelector('.nav');nav.replaceChildren(primaryButton('환경 현황','overview','code'),primaryButton('변경 검토·적용','plan','git'));const pending=el('span','0','badge');pending.dataset.changeCount='';pending.hidden=true;nav.querySelector('[data-view=plan]').append(pending);
+ const group=el('div',undefined,'nav-domain-group');group.setAttribute('role','group');group.setAttribute('aria-label','환경 구성');group.append(el('div','환경 구성','navlabel'));
+ for(const domain of domains)group.append(primaryButton(domain.title,domain.start,domain.icon));nav.append(group);
+ const help=el('div',undefined,'nav-domain-group');help.append(el('div','시작 안내','navlabel'),primaryButton('처음 설정','setup','help'));nav.append(help);
  const mobile=$('mobile-nav');mobile.replaceChildren();
- const overview=el('option','환경 개요');overview.value='overview';mobile.append(overview);
- const options=el('optgroup');options.label='환경 설정';
- for(const domain of domains){const option=el('option',domain.title);option.value=domain.start;options.append(option)}
- mobile.append(options);mobile.onchange=event=>navigate(event.target.value);
- $('about-link').textContent='설정 적용 안내 ↗';
+ for(const [id,title] of [['overview','환경 현황'],['plan','변경 검토·적용']]){const option=el('option',title);option.value=id;mobile.append(option)}
+ const options=el('optgroup');options.label='환경 구성';for(const domain of domains){const option=el('option',domain.title);option.value=domain.start;options.append(option)}mobile.append(options);
+ const start=el('optgroup');start.label='시작 안내';const option=el('option','처음 설정');option.value='setup';start.append(option);mobile.append(start);
+ mobile.onchange=event=>navigate(event.target.value,{primary:true});$('about-link').textContent='기존 설정 가져오기';$('about-link').onclick=event=>{event.preventDefault();navigate('existing',{primary:true})};
 }
 function updateLocation(){
- const domain=domainFor(view),primary=domain?.start||'overview';
- all('.nav [data-view]').forEach(item=>{const active=item.dataset.view===primary;item.classList.toggle('active',active);active?item.setAttribute('aria-current','page'):item.removeAttribute('aria-current')});
- $('mobile-nav').value=primary;
- $('breadcrumb').textContent=domain?domain.title+(domain.pages.length>1?' / '+labels[view]:''):view==='existing'?'환경 개요 / 기존 설정 가져오기':view==='plan'?'환경 개요 / 설정 적용 안내':view==='setup'?'환경 개요 / 새 컴퓨터 설정':'환경 개요';
- $('page-title').textContent=domain?.title||labels[view];
- $('overline').textContent=view==='overview'?'MY ENVIRONMENT':view==='setup'?'GETTING STARTED':view==='plan'?'APPLY SETTINGS':view==='existing'?'EXISTING SETTINGS':'ENVIRONMENT / '+domain?.id.toUpperCase();
- $('page-intro').textContent=domain?.intro||({overview:'이 기기의 준비 상태를 확인하고, 필요한 설정부터 시작하세요.',setup:'기본 설정을 선택·저장·적용한 뒤 필요한 원격 접속과 외부 서비스를 연결하세요.',existing:'감지한 설정을 검토하고 원본을 유지하는 참조로 관리 목록에 추가합니다.',plan:'저장한 셸·도구·Git·SSH 설정을 적용하는 명령입니다. 외부 서비스의 로그인은 해당 연결 화면에서 진행하세요.'})[view];
- const action=({connections:'+ Git 연결 추가',servers:'+ SSH 대상 추가',profiles:'+ 작성자 설정 추가',secrets:'+ 인증 참조 추가','remote-secrets':'+ 인증 참조 추가'})[view];
- $('heading-action').hidden=!action;$('heading-action').textContent=action||'';
+ const domain=domainFor(view),primary=setupMode?'setup':domain?.start||(['plan','setup'].includes(view)?view:'overview');
+ all('.nav [data-view]').forEach(item=>{const active=item.dataset.view===primary;item.classList.toggle('active',active);active?item.setAttribute('aria-current','page'):item.removeAttribute('aria-current')});$('mobile-nav').value=primary;
+ const step=setupSteps.find(item=>item.view===view);
+ $('breadcrumb').textContent=setupMode&&view!=='setup'?'처음 설정 / '+(step?(setupSteps.indexOf(step)+1)+'. ':'')+labels[view]:domain?'환경 구성 / '+domain.title+(domain.title!==labels[view]?' / '+labels[view]:''):view==='existing'?'환경 현황 / 기존 설정 가져오기':labels[view];
+ $('page-title').textContent=labels[view];document.title=labels[view]+' · dotfiles';
+ $('overline').textContent=setupMode?'처음 설정 안내':domain?'환경 구성 · '+domain.title:view==='plan'?'변경 관리':view==='existing'?'기존 설정 가져오기':'내 환경';
+ $('page-intro').textContent=domain?.intro||({overview:'이 기기에서 감지한 현재 상태와 대시보드에서 관리하는 항목을 확인합니다.',setup:'필요한 설정을 순서대로 안내합니다. 각 단계의 확인 기록도 이 화면에서 볼 수 있습니다.',existing:'감지한 설정을 검토하고 원본을 유지하는 참조로 관리 목록에 추가합니다.',plan:'셸·도구·Git·SSH 설정의 변경을 검토·저장하고 적용 방법을 확인합니다. 서비스 로그인과 프로젝트 실행은 각 화면에서 진행합니다.'})[view];
+ const action=({connections:'+ Git 연결 추가',servers:'+ SSH 대상 추가',profiles:'+ 폴더 규칙 추가',secrets:'+ 인증 참조 추가','remote-secrets':'+ 인증 참조 추가'})[view];$('heading-action').hidden=!action;$('heading-action').textContent=action||'';
 }
 function attachDomainNavigation(){
  if(!draft)return;
@@ -41,30 +38,38 @@ function attachDomainNavigation(){
  if(domain?.pages.length>1&&!$('domain-navigation')){
   const tabs=el('nav',undefined,'domain-navigation');tabs.id='domain-navigation';tabs.setAttribute('aria-label',domain.title+' 세부 설정');
   for(const [id,title] of domain.pages){const item=button(title,()=>navigate(id),id===view?'btn active':'btn');if(id===view)item.setAttribute('aria-current','page');tabs.append(item)}
+  if(domain.utilities){
+   const extra=el('details',undefined,'domain-utilities');extra.id='domain-utilities';extra.open=domain.utilities.some(([id])=>id===view);
+   extra.append(el('summary','필요할 때 · 공통 인증·키 설정'),el('p','인증 참조와 키 수명은 연결 상세에서도 설정할 수 있습니다. 이 메뉴는 공통 설정을 모아보는 곳이며 처음 설정의 별도 단계가 아닙니다.','hint'));
+   for(const [id,title] of domain.utilities)extra.append(button(title,()=>navigate(id),id===view?'btn active':'btn'));
+   tabs.append(extra);
+  }
   root.prepend(tabs);
  }
  attachExistingSummary();
  attachSetupGuide();
- if(domain&&!$('domain-apply-link')){
-  const actions=el('div',undefined,'domain-actions');actions.id='domain-apply-link';
-  if(['apps','git','remote'].includes(domain.id))actions.append(button('설정 적용 안내 →',()=>navigate('plan'),'quiet'));
-  actions.append(button('환경 개요로 돌아가기',()=>navigate('overview'),'quiet'));root.append(actions);
- }
 }
-function navigate(next){
+const rootRoutes={overview:'status',plan:'changes',setup:'start',existing:'existing-settings'};
+function routeFor(page){const domain=domainFor(page);return '#/'+(setupMode&&page!=='setup'?'start/'+page:rootRoutes[page]||(domain?domain.pages.length===1&&page===domain.start?domain.id:domain.id+'/'+page:page));}
+function restoreDashboardLocation(){
+ const path=location.hash.replace(/^#\//,''),root=Object.keys(rootRoutes).find(key=>rootRoutes[key]===path);
+ if(path.startsWith('start/')&&Object.hasOwn(labels,path.slice(6))){setupMode=true;navigate(path.slice(6),{history:false});return}
+ const page=path.split('/').pop();setupMode=false;navigate(root||Object.hasOwn(labels,page)&&page||'overview',{history:false});
+}
+function navigate(next,options={}){
  if(!draft)return;
- if(next==='environment')next='services';
- const domain=domains.find(item=>item.id===next);if(domain)next=domain.start;
- if(next==='setup')setupMode=true;
- if(next==='overview')setupMode=false;
+ for(const dialog of all('dialog[open]'))dialog.close();
+ if(next==='environment')next='services';const domain=domains.find(item=>item.id===next);if(domain)next=domain.start;
+ if(options.primary)setupMode=false;if(next==='setup')setupMode=true;if(['overview','plan','existing'].includes(next))setupMode=false;
  const renders={overview:renderEnvironmentOverview,setup:renderSetupFlow,existing:renderExistingSettings,tools:renderTools,appearance:renderAppearance,agents:renderAgents,connections:renderConnections,servers:renderConnections,profiles:renderProfiles,secrets:renderSecrets,sessions:renderSessions,'remote-secrets':renderSecrets,'remote-sessions':renderSessions,services:renderEnvironment,runtime:renderEnvironment,tailscale:renderTailscale,plan:renderPlan};
- if(!renders[next])next='overview';
+ if(!renders[next])next='overview';const changed=view!==next||location.hash!==routeFor(next);
  if(['connections','servers'].includes(next)&&view!==next){chosen='';search='';}
- view=next;updateLocation();renders[view]();mark();attachDomainNavigation();
-};
-function navigationCard(parent,title,status,text,destination){
- const body=groupBox(title,parent);body.append(badge(status),el('p',text,'tool-state'),button('설정 열기 →',()=>navigate(destination)));return body;
+ view=next;const hash=routeFor(view);if(location.hash!==hash){if(options.history===false||!location.hash)history.replaceState(null,'',hash);else history.pushState(null,'',hash)}
+ updateLocation();renders[view]();mark();attachDomainNavigation();
+ if(changed){$('page-title').tabIndex=-1;$('page-title').focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'})}
 }
+window.addEventListener('popstate',()=>{if(draft)restoreDashboardLocation()});
+
 function renderEnvironmentOverview(){renderInventoryOverview()}
 function instructionLink(parent,title,url){const link=el('a',title+' ↗','instruction-link');link.href=url;link.target='_blank';link.rel='noopener noreferrer';parent.append(link);}
 function renderAgents(){

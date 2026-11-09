@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id),all=s=>[...document.querySelectorAll(s)];
 const svg={globe:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M3 12h18M12 3c6 5 6 13 0 18-6-5-6-13 0-18Z\"/></svg>",git:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"6\" cy=\"5\" r=\"2\"/><circle cx=\"6\" cy=\"19\" r=\"2\"/><circle cx=\"18\" cy=\"6\" r=\"2\"/><path d=\"M6 7v10m0-3c0-5 12 0 12-6\"/></svg>",lock:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"5\" y=\"10\" width=\"14\" height=\"11\" rx=\"2\"/><path d=\"M8 10V6a4 4 0 0 1 8 0v4m-4 5v2\"/></svg>",key:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"5\"/><path d=\"m12 12 9 9m-5-5 3-3m-6 0 3-3\"/></svg>",code:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18\"/></svg>",help:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4m0 4h.01\"/></svg>",link:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m9 15 6-6m-7 8-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 10a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-1 1\"/></svg>",shell:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"2\" y=\"3\" width=\"20\" height=\"18\" rx=\"3\"/><path d=\"m6 8 4 4-4 4m7 0h5\"/></svg>",arrow:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14m-6-6 6 6-6 6\"/></svg>",search:"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"10\" cy=\"10\" r=\"6\"/><path d=\"m15 15 5 5\"/></svg>"};
 let snapshot=null,draft=null,baseline=null,preview=null,view='overview',chosen='',search='',inspector='connection',mapOpen=false,node='host',busy=false;
-const labels={overview:'환경 개요',profiles:'작업 프로필',connections:'Git 호스트 연결',servers:'SSH 접속 대상',appearance:'셸과 테마',tools:'프로그램 설치',secrets:'Git · SSH 인증 참조',sessions:'SSH 키 · 인증 세션',plan:'적용 안내'};
+const labels={overview:'환경 현황',profiles:'작업 프로필',connections:'Git 호스트 연결',servers:'SSH 접속 대상',appearance:'셸과 테마',tools:'프로그램 설치',secrets:'Git · SSH 인증 참조',sessions:'SSH 키 · 인증 세션',plan:'적용 안내'};
 const providers={github:'GitHub',gitlab:'GitLab',generic:'선택 안 함 · Git 전송만'},sources={bitwarden:'Bitwarden',agent:'기존 SSH agent','git-helper':'Git credential helper',environment:'환경변수'};
 const clone=x=>structuredClone(x),current=()=>draft.connections.find(c=>c.id===chosen),profileOf=c=>draft.profiles.find(p=>p.id===c.profile),credentialOf=id=>draft.credentials.find(c=>c.id===id);
 function el(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n}
@@ -25,7 +25,7 @@ function fieldContract(id){
   const prefix='profile-'+profile.id+'-';if(!id.startsWith(prefix))continue;const key=id.slice(prefix.length);
   required=['name','path'].includes(key)||(draft.git.enabled&&profile.enabled&&['author','email'].includes(key));
   if(['author','email'].includes(key)&&!required)condition='Git 작성자 기능 사용 시 필수';
-  const old=baseline.profiles.find(item=>item.id===profile.id);if(old){previous=old[key];origin='작업 프로필 ‘'+old.name+'’';}
+  const old=baseline.profiles.find(item=>item.id===profile.id);if(old){previous=old[key];origin='폴더 규칙 ‘'+old.name+'’';}
  }
  for(const ref of draft.credentials){
   const keys={['source-'+ref.id]:'source',['item-'+ref.id]:'item',['kind-'+ref.id]:'kind',['username-'+ref.id]:'username',['env-'+ref.id]:'variable',['helper-'+ref.id]:'helper'};
@@ -65,7 +65,7 @@ function explanation(parent,title,text){const n=el('div',undefined,'explain');n.
 function makeSwitch(on,handler,label){const b=button('',handler,'switch'+(on?' on':''));b.setAttribute('role','switch');b.setAttribute('aria-label',label);b.setAttribute('aria-checked',String(on));return b}
 function switchRow(parent,label,hint,on,handler){const r=el('div',undefined,'settingrow'),t=el('span',label);if(hint)t.append(el('small',hint));r.append(t,makeSwitch(on,handler,label));parent.append(r)}
 function groupBox(title,parent){const box=el('section',undefined,'group'),head=el('div',title,'group-head'),body=el('div',undefined,'card-pad');box.append(head,body);parent.append(box);return body}
-function mark(){const changes=diff(baseline,draft);$('dirty-count').textContent=changes.length;preview=null;}
+function mark(){const changes=diff(baseline,draft);$('dirty-count').textContent=changes.length;for(const counter of all('[data-change-count]')){counter.textContent=changes.length;counter.hidden=!changes.length}preview=null;if(typeof refreshRecordFields==='function')refreshRecordFields();}
 function diff(before,after,prefix=''){
  if(JSON.stringify(before)===JSON.stringify(after))return[];
  if(before&&after&&typeof before==='object'&&typeof after==='object'&&!Array.isArray(before)&&!Array.isArray(after))return [...new Set([...Object.keys(before),...Object.keys(after)])].flatMap(k=>diff(before[k],after[k],prefix?prefix+'.'+k:k));
@@ -105,8 +105,7 @@ function updateConnection(c,key,value){c[key]=value;mark();renderRows();renderMa
 function compatible(source,role,c){return role==='api'?['bitwarden','environment'].includes(source):c.method==='ssh'?['bitwarden','agent'].includes(source):['bitwarden','git-helper'].includes(source)}
 function credentialEditor(parent,c,role){
  const get=()=>role==='api'?c.api.credential:c.credential,set=v=>{if(role==='api')c.api.credential=v;else c.credential=v;mark();renderInspector();renderMap()};
- const options=[['',role==='git'&&c.method==='https'?'인증 없음 · 공개 읽기':'인증 참조 선택'],...draft.credentials.filter(x=>compatible(x.source,role,c)||x.id===get()).map(x=>[x.id,x.id+' · '+sources[x.source]])];
- field(parent,role==='api'?'API 인증 참조':c.kind==='server'?'SSH 인증 참조':'Git 인증 참조',get(),options,set,role+'-credential');parent.append(button('+ 새 인증 참조',()=>newCredential(c,role),'quiet'));
+ recordChoiceField(parent,role==='api'?'API 인증 참조':c.kind==='server'?'SSH 인증 참조':'Git 인증 참조',get(),()=>credentialRecords(c,role),set,role+'-credential',role==='git'&&c.method==='https'?'인증 없음 · 공개 읽기':'인증 참조 지정 안 함');parent.append(button('+ 새 인증 참조',()=>newCredential(c,role),'quiet'));
  const ref=credentialOf(get());if(ref){const details=el('details',undefined,'credential-details');details.open=ref.source==='bitwarden'&&!ref.item;details.append(el('summary',sources[ref.source]+' · 참조 설정 편집'));const line=el('div');line.style.marginTop='18px';credentialFields(line,ref,role==='api'?['bitwarden','environment']:c.method==='ssh'?['bitwarden','agent']:['bitwarden','git-helper'],()=>{mark();renderMap()},role==='git'&&c.method==='ssh');details.append(line);parent.append(details)}
 }
 function credentialFields(parent,ref,allowed,onchange,ssh=false){
@@ -150,10 +149,11 @@ function renderInspector(){
  }
  credentialEditor(body,c,'git');
  if(c.kind==='git'){
- const scope=el('section',undefined,'connection-scope');scope.append(el('h3',c.kind==='git'?'폴더별 자동 적용 · 선택 사항':'연결 분류 · 선택 사항'));
- field(scope,'작업 프로필',c.profile,[['','연결하지 않음 · 이 연결을 직접 선택'],...draft.profiles.map(p=>[p.id,p.name])],value=>{updateConnection(c,'profile',value);renderInspector()},'profile-select');
- if(c.profile){const profile=profileOf(c);scope.append(el('p',c.kind==='git'?'작업 프로필에서 가져옴: '+(profile?.name||c.profile)+' · '+(profile?.path||'')+' · Git 작성자 '+(profile?.author||'미입력')+' / '+(profile?.email||'미입력'):'연결 분류: '+(profile?.name||c.profile)+' · SSH 별칭은 폴더와 무관하게 사용합니다. 이 선택이 서버의 로그인 사용자를 바꾸지는 않습니다.','hint'));}
- else scope.append(el('p',c.kind==='git'?'프로필 없이 저장할 수 있습니다. 인증 준비는 --connection '+c.id+'로 직접 선택하고, Git은 적용 안내의 연결별 설정 명령을 사용합니다. 전체 폴더에 자동 적용하지 않습니다.':'프로필 없이 저장할 수 있습니다. 인증 준비는 --connection '+c.id+'로 직접 선택합니다. SSH 설정을 적용한 뒤에는 어느 폴더에서나 ssh '+(c.sshAlias||c.id)+'로 접속합니다.','hint'));
+ const scope=el('section',undefined,'connection-scope');scope.append(el('h3','폴더별 자동 적용 · 선택 사항'));
+ recordChoiceField(scope,'자동 적용할 폴더 규칙',c.profile,profileRecords,value=>{updateConnection(c,'profile',value);renderInspector()},'profile-select','지정하지 않음 · 연결을 직접 선택');
+ if(c.profile){const profile=profileOf(c);scope.append(el('p','적용할 폴더: '+(profile?.path||'')+' · 규칙: '+(profile?.name||c.profile)+(draft.git.enabled?' · 작성자 '+(profile?.author||'미입력')+' / '+(profile?.email||'미입력'):''),'hint'));}
+ else scope.append(el('p','폴더를 지정하지 않아도 사용할 수 있습니다. 인증 준비는 --connection '+c.id+'로 직접 선택하며 Git은 적용 안내의 연결별 명령을 사용합니다.','hint'));
+ scope.append(button('폴더·작성자 규칙 설정 →',()=>navigate('profiles')),el('p','Git 설정 → 작성자·적용 규칙에서 폴더를 만들고 이 연결을 지정할 수 있습니다. 저장·적용 후 해당 폴더의 저장소에서 자동 선택합니다.','hint'));
  body.append(scope,el('p','연결 ID: '+c.id+' · 자동 생성된 명령용 식별자','hint'));
  }else {
   explanation(body,'SSH 별칭으로 접속','설정을 저장·적용한 뒤 어느 폴더에서나 ssh '+(c.sshAlias||c.id)+'로 접속합니다. Git 작성자 설정은 필요하지 않습니다.');
@@ -184,13 +184,26 @@ function renderAppearance(){
 }
 function updateTerminal(){const target=$('terminal-live');if(!target)return;const a=draft.features.ohmyzsh;const prompt=!a.enabled?'~/projects %':a.values.theme==='agnoster'?'dev / ~/projects /':a.values.theme==='minimal'?'~/projects $':'➜ projects git:(main)';target.replaceChildren(el('span',prompt,'prompt'),document.createTextNode('\necho hello\nhello\n'),el('span','▏','prompt'));target.style.fontFamily=previewFont+',monospace';target.style.fontSize=previewSize+'px';$('terminal-label').textContent='zsh · '+(a.enabled?a.values.theme:'기본 프롬프트')}
 function renderProfiles(){
- const root=$('page-body');root.replaceChildren();const global=groupBox('Git 기록에 사용할 신원',root);switchRow(global,'폴더별 Git 신원 설정','커밋 이름·이메일을 gitdir로 선택합니다. 접속 인증은 ‘Git 호스트 연결 또는 원격 접속’에서 별도로 고릅니다.',draft.git.enabled,()=>{draft.git.enabled=!draft.git.enabled;mark();renderProfiles()});switchRow(global,'미분류 폴더의 커밋 신원 차단','Git 신원을 켰을 때만 적용합니다. 실수로 다른 계정의 이름·이메일을 사용하는 것을 막습니다.',draft.git.blockUnclassified,()=>{draft.git.blockUnclassified=!draft.git.blockUnclassified;mark();renderProfiles()});
+ const root=$('page-body');root.replaceChildren();
+ explanation(root,'폴더별 자동 적용은 여기서 설정합니다.','폴더 규칙을 만들고 그 폴더에서 사용할 Git 연결을 지정하세요. 커밋 작성자 이름·이메일도 함께 지정할 수 있습니다. 자동 적용이 필요 없으면 비워 두고 Git 연결을 직접 선택하면 됩니다.');
+ const global=groupBox('폴더별 커밋 작성자 · 선택',root);
+ switchRow(global,'커밋 작성자도 폴더별로 지정','접속 연결의 자동 적용과 별개입니다. 켜면 활성 폴더 규칙의 작성자 이름·이메일이 필요합니다.',draft.git.enabled,()=>{draft.git.enabled=!draft.git.enabled;mark();renderProfiles()});
+ switchRow(global,'규칙 밖 폴더의 커밋 신원 차단','작성자 지정을 켰을 때만 적용합니다. 다른 계정의 이름·이메일로 커밋하는 실수를 막습니다.',draft.git.blockUnclassified,()=>{draft.git.blockUnclassified=!draft.git.blockUnclassified;mark();renderProfiles()});
  const grid=el('div',undefined,'profile-grid');root.append(grid);
- for(const p of draft.profiles){const body=groupBox(p.name,grid);body.dataset.profile=p.id;switchRow(body,'프로필 사용',p.id,p.enabled,()=>{p.enabled=!p.enabled;mark();renderProfiles()});
-  for(const [key,label] of [['name','표시 이름'],['path','프로젝트 폴더 · 중첩 없이'],['author','Git 커밋 작성자'],['email','Git 커밋 이메일']])field(body,label,p[key],null,v=>{p[key]=v;mark()},'profile-'+p.id+'-'+key);
-  body.append(button('프로필 삭제',()=>{if(draft.connections.some(c=>c.profile===p.id)){toast('이 프로필의 Git 호스트 연결 또는 원격 접속을 먼저 옮기거나 삭제하세요.');return}draft.profiles=draft.profiles.filter(x=>x.id!==p.id);mark();renderProfiles()},'quiet danger'));
+ for(const p of draft.profiles){
+  const body=groupBox(p.name,grid);body.dataset.profile=p.id;
+  switchRow(body,'이 폴더 규칙 사용','저장·적용 후 해당 폴더와 하위 저장소에서 사용합니다.',p.enabled,()=>{p.enabled=!p.enabled;mark();renderProfiles()});
+  for(const [key,label] of [['name','규칙 이름'],['path','자동 적용할 폴더 · 중첩 없이'],['author','Git 커밋 작성자'],['email','Git 커밋 이메일']])field(body,label,p[key],null,v=>{p[key]=v;mark()},'profile-'+p.id+'-'+key);
+  const connections=draft.connections.filter(c=>c.kind==='git'),scope=el('section',undefined,'connection-scope');scope.append(el('h3','이 폴더에서 자동으로 사용할 Git 연결'));
+  for(const c of connections){
+   const row=el('div',undefined,'settingrow'),label=el('span',c.name);for(const line of connectionLines(c))label.append(el('small',line));if(!c.enabled)label.append(el('small','대시보드 연결 사용 꺼짐'));
+   const toggle=makeSwitch(c.profile===p.id,()=>{c.profile=c.profile===p.id?'':p.id;mark();renderProfiles()},p.name+'에서 '+c.name+' 자동 적용');toggle.disabled=!p.enabled;row.append(label,toggle);scope.append(row);
+  }
+  if(!connections.length)scope.append(el('p','Git 호스트 연결에서 연결을 먼저 추가하면 여기에서 선택할 수 있습니다. 폴더 규칙만 먼저 만들 수도 있습니다.','hint'));
+  scope.append(button('Git 호스트 연결 열기 →',()=>navigate('connections')));body.append(scope);
+  body.append(button('폴더 규칙 삭제',()=>{if(draft.connections.some(c=>c.profile===p.id)){toast('이 규칙을 사용하는 연결의 폴더 지정을 먼저 해제하세요.');return}draft.profiles=draft.profiles.filter(x=>x.id!==p.id);mark();renderProfiles()},'quiet danger'));
  }
- explanation(root,'한 작업 프로필에 여러 Git 호스트 연결 또는 원격 접속을 추가할 수 있습니다.','한 프로필에서 GitHub SSH와 GitLab HTTPS를 함께 쓸 수 있습니다. linked worktree는 원본 저장소의 Git 관리 디렉터리를 따릅니다.');
+ explanation(root,'기존 작성자 규칙은 원본을 유지합니다.','가져온 원격 URL 기반 규칙은 위의 기존 설정 참조에서 확인합니다. 여기의 폴더 규칙으로 자동 변환하거나 덮어쓰지 않습니다. linked worktree는 원본 저장소의 Git 관리 디렉터리를 따릅니다.');
 }
 function renderTools(){
  const root=$('page-body');root.replaceChildren();explanation(root,'필요한 도구만 선택','선택 후 저장하면 적용 안내에 미설치 도구와 필요한 의존성의 설치 명령이 나옵니다. 화면의 선택만으로 설치하거나 로그인하지 않습니다. 끄면 프로그램을 삭제하지 않습니다.');
@@ -239,7 +252,7 @@ function renderInstruction(parent,block){
  parent.append(outer);
 }
 function renderPlan(){
- const root=$('page-body');root.replaceChildren();const data=preview||snapshot,body=groupBox('현재 설정에 맞춘 실행 순서',root);
+ const root=$('page-body');root.replaceChildren();renderChangeHeader(root);if(diff(baseline,draft).length||snapshot.revision==='new'){const pending=groupBox('설정 저장 후 적용',root);pending.append(el('p','위에서 설정을 검토·저장하면 저장된 내용에 맞는 적용 방법과 실행 확인이 표시됩니다.','tool-state'));return}const data=preview||snapshot,body=groupBox('저장한 설정의 적용 방법',root);
  body.append(el('p',preview?'검증한 초안 기준입니다. 설정 파일 생성 단계에서 먼저 저장한 뒤 명령을 실행하세요.':'저장된 설정 기준입니다. 화면에서 값을 바꿨다면 초안 기준 안내를 갱신하세요.','hint'));
  body.append(el('p','같은 WSL / macOS / Linux 터미널에서 진행하세요. 로그인·키 로드는 이 페이지가 자동으로 실행하지 않습니다.','tool-state'));
  const actions=el('div',undefined,'inline-actions');actions.append(button('초안 기준 안내 갱신',async()=>{try{await updatePreview();renderPlan()}catch(e){toast(e.message)}}),button('AI에게 전달할 안내 복사',async()=>{try{const p=(await updatePreview()).plan;await navigator.clipboard.writeText(planText(p));toast('조건과 실행 순서가 포함된 안내를 복사했습니다.')}catch(e){toast(e.message)}}));body.append(actions);
@@ -251,7 +264,7 @@ function renderPlan(){
   index.append(button((number+1)+'. '+stage.title,()=>section.scrollIntoView({behavior:'smooth',block:'start'}),'btn'));
  }
  const notes=el('details',undefined,'runbook-notes');notes.append(el('summary','적용 범위와 설정 우선순위'));for(const note of data.plan.notes)notes.append(el('p',note,'tool-state'));body.append(notes);
- const files=el('details',undefined,'group generated-files');files.append(el('summary','생성되는 파일'));const filebody=el('div',undefined,'card-pad');files.append(filebody);root.append(files);renderFiles(filebody,data.files);
+ const files=el('details',undefined,'group generated-files');files.append(el('summary','생성되는 파일'));const filebody=el('div',undefined,'card-pad');files.append(filebody);root.append(files);renderFiles(filebody,data.files);renderChangeConfirmation(root);
 }
 
 function renderFiles(body,files=(preview||snapshot).files){const note=el('p',preview?'검증한 초안의 생성 예정 내용입니다.':'저장된 설정의 생성 내용입니다. 초안 변경은 ‘미리보기 갱신’으로 확인하세요.','hint');body.append(note);const names=Object.keys(files);if(!names.length){body.append(el('p','필수 설정을 채워야 생성 내용을 볼 수 있습니다.','hint'));return}const select=el('select',undefined,'file-picker');select.setAttribute('aria-label','생성 파일 선택');const pre=el('pre',undefined,'long-pre');for(const name of names)select.append(el('option',name));select.onchange=()=>pre.textContent=files[select.value];pre.textContent=files[names[0]];body.append(select,pre,button('초안 미리보기 갱신',async()=>{try{const data=await updatePreview();body.replaceChildren();renderFiles(body,data.files)}catch(e){toast(e.message)}}));}
@@ -261,8 +274,8 @@ function newCredential(c=null,role='git'){
  const proposed=uniqueId(c?c.id+'-'+role:'credential',draft.credentials);
  openAdd('인증 참조 추가',proposed,id=>{const ref=makeCredential(id);if(c&&role==='git'&&c.method==='https')ref.username=c.provider==='github'?'x-access-token':c.provider==='gitlab'?'oauth2':'';draft.credentials.push(ref);if(c){if(role==='api')c.api.credential=id;else c.credential=id}mark();if(connectionView()){renderInspector();renderMap()}else renderSecrets()});
 }
-function openAdd(title,id,callback){$('add-title').textContent=title;$('add-fields').replaceChildren();const input=field($('add-fields'),'ID · 영문 소문자·숫자·하이픈',id,null,null,'new-id');$('add-error').textContent='';$('confirm-add').onclick=()=>{try{const value=input.value.trim();if(!/^[a-z][a-z0-9-]{0,63}$/.test(value))throw Error('ID 형식을 확인하세요.');const list=title.includes('프로필')?draft.profiles:title.includes('인증')?draft.credentials:draft.connections;if(list.some(x=>x.id===value))throw Error('이미 사용 중인 ID입니다.');callback(value);$('add-modal').close()}catch(e){$('add-error').textContent=e.message}};$('add-modal').showModal();input.focus();}
-function addItem(){if(view==='profiles'){openAdd('작업 프로필 추가',uniqueId('profile',draft.profiles),id=>{draft.profiles.push({id,name:'새 프로필',path:'~/'+id+'/',author:'',email:'',enabled:false});mark();renderProfiles()})}else if(['secrets','remote-secrets'].includes(view))newCredential();else if(connectionView()){
+function openAdd(title,id,callback,collection){$('add-title').textContent=title;$('add-fields').replaceChildren();const input=field($('add-fields'),'ID · 영문 소문자·숫자·하이픈',id,null,null,'new-id');$('add-error').textContent='';$('confirm-add').onclick=()=>{try{const value=input.value.trim();if(!/^[a-z][a-z0-9-]{0,63}$/.test(value))throw Error('ID 형식을 확인하세요.');const list=collection?draft[collection]:title.includes('프로필')?draft.profiles:title.includes('인증')?draft.credentials:draft.connections;if(list.some(x=>x.id===value))throw Error('이미 사용 중인 ID입니다.');callback(value);$('add-modal').close()}catch(e){$('add-error').textContent=e.message}};$('add-modal').showModal();input.focus();}
+function addItem(){if(view==='profiles'){openAdd('폴더 규칙 추가',uniqueId('profile',draft.profiles),id=>{draft.profiles.push({id,name:'새 폴더 규칙',path:'~/'+id+'/',author:'',email:'',enabled:false});mark();renderProfiles()},'profiles')}else if(['secrets','remote-secrets'].includes(view))newCredential();else if(connectionView()){
  $('add-title').textContent='연결 추가';$('add-fields').replaceChildren();$('add-error').textContent='';
  const selectedKind=connectionKind(),kind=field($('add-fields'),'접속 대상 종류',selectedKind,[[selectedKind,selectedKind==='git'?'Git 저장소':'SSH 서버 · 키 인증']],null,'new-connection-kind');kind.disabled=true;
  const name=field($('add-fields'),'연결 이름','',null,null,'new-connection-name');name.placeholder=connectionKind()==='git'?'예: 개인 GitHub':'예: 개발 서버';
@@ -276,6 +289,6 @@ function addItem(){if(view==='profiles'){openAdd('작업 프로필 추가',uniqu
 async function refreshMetadata(){try{const data=await api('/api/state');snapshot.definitions=data.definitions;snapshot.auth_status=data.auth_status;snapshot.setup_progress=data.setup_progress;snapshot.shared_environment=data.shared_environment;snapshot.host_state=data.host_state;if(typeof progressBasis!=='undefined'){progressBasis=clone(data.state);progressSnapshot=snapshot;}if(data.revision!==snapshot.revision)notice('다른 프로세스에서 설정이 바뀌었습니다. 새 설정을 불러온 뒤 편집하세요. 현재 초안을 복사해 보관할 수 있습니다.');navigate(view);toast('설치 여부와 서버 프로세스 상태를 갱신했습니다. 초안은 유지합니다.')}catch(e){toast(e.message)}}
 async function review(){if(busy)return;busy=true;$('review-button').disabled=true;try{const data=await updatePreview(),changes=diff(baseline,draft);$('review-content').textContent=changes.length?changes.map(c=>c.path+'\n  이전: '+JSON.stringify(c.before??null)+'\n  변경: '+JSON.stringify(c.after??null)).join('\n\n'):'값의 변경은 없습니다. 현재 설정 파일을 다시 생성합니다.';$('save-error').textContent='';$('review-modal').showModal()}catch(e){notice(e.message);toast(e.message)}finally{busy=false;$('review-button').disabled=false}}
 async function save(){if(busy)return;busy=true;$('confirm-review').disabled=true;try{snapshot=await api('/api/settings',draft);draft=clone(snapshot.state);baseline=clone(snapshot.state);preview=null;$('review-modal').close();notice('설정 파일을 생성했습니다. 적용 안내의 configure 명령을 실행하고 새 셸을 여세요. 이미 실행 중인 세션과 기존 remote URL은 바뀌지 않습니다.');navigate('plan');toast('설정 저장 완료. 호스트 설정 적용 안내를 확인하세요.')}catch(e){$('save-error').textContent=e.message}finally{busy=false;$('confirm-review').disabled=false}}
-all('[data-view]').forEach(b=>b.onclick=()=>navigate(b.dataset.view));$('mobile-nav').onchange=e=>navigate(e.target.value);$('heading-action').onclick=addItem;$('review-button').onclick=review;$('confirm-review').onclick=save;$('close-review').onclick=()=>$('review-modal').close();$('cancel-add').onclick=()=>$('add-modal').close();$('about-link').onclick=e=>{e.preventDefault();navigate('plan')};$('reset-draft').onclick=()=>{draft=clone(baseline);preview=null;chosen='';notice(snapshot.migration_notice);navigate(view);toast('저장 전 초안을 취소했습니다.')};
+all('[data-view]').forEach(b=>b.onclick=()=>navigate(b.dataset.view));$('mobile-nav').onchange=e=>navigate(e.target.value);$('heading-action').onclick=addItem;$('review-button').onclick=()=>navigate('plan',{primary:true});$('confirm-review').onclick=save;$('close-review').onclick=()=>$('review-modal').close();$('cancel-add').onclick=()=>$('add-modal').close();$('about-link').onclick=e=>{e.preventDefault();navigate('plan')};$('reset-draft').onclick=()=>{draft=clone(baseline);preview=null;chosen='';notice(snapshot.migration_notice);navigate(view);toast('저장 전 초안을 취소했습니다.')};
 window.addEventListener('beforeunload',e=>{if(draft&&diff(baseline,draft).length){e.preventDefault();e.returnValue=''}});
-async function initializeDashboard(){try{snapshot=await api('/api/state');draft=clone(snapshot.state);baseline=clone(snapshot.state);chosen='';document.querySelector('.workspace small').textContent=snapshot.environment;document.querySelector('.footer span:last-child').textContent=snapshot.data_directory;notice(snapshot.migration_notice||snapshot.validation_error);all('.nav button,#mobile-nav,#review-button,#reset-draft').forEach(control=>control.disabled=false);navigate('overview')}catch(e){notice(e.message);$('page-body').replaceChildren(el('p','설정을 불러오지 못했습니다. 서버 로그와 설정 파일을 확인한 뒤 새로고침하세요.','notice'))}}
+async function initializeDashboard(){try{snapshot=await api('/api/state');draft=clone(snapshot.state);baseline=clone(snapshot.state);chosen='';document.querySelector('.workspace small').textContent=snapshot.environment;document.querySelector('.footer span:last-child').textContent=snapshot.data_directory;notice(snapshot.migration_notice||snapshot.validation_error);all('.nav button,#mobile-nav,#review-button,#reset-draft').forEach(control=>control.disabled=false);restoreDashboardLocation()}catch(e){notice(e.message);$('page-body').replaceChildren(el('p','설정을 불러오지 못했습니다. 서버 로그와 설정 파일을 확인한 뒤 새로고침하세요.','notice'))}}
