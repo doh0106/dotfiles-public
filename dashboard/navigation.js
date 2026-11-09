@@ -3,12 +3,12 @@
 let setupMode=false;
 const domains=[
  {id:'apps',title:'앱·도구',icon:'shell',start:'appearance',intro:'필요한 프로그램을 준비하고 터미널·셸과 AI 작업 도구를 설정합니다.',pages:[['appearance','터미널·셸·테마'],['tools','프로그램 설치'],['agents','AI 도구·스킬']]},
- {id:'git',title:'Git',icon:'git',start:'connections',intro:'Git 호스트 접속과 폴더별 작성자 설정을 관리합니다. 두 설정은 독립적으로 사용할 수 있습니다.',pages:[['connections','Git 호스트 연결'],['profiles','작성자·적용 규칙 · 선택']],utilities:[['secrets','인증 참조 모아보기'],['sessions','공통 키·세션 정책']]},
- {id:'remote',title:'원격 접속',icon:'globe',start:'servers',intro:'터미널로 접속할 컴퓨터를 등록하고 SSH와 필요한 네트워크 연결을 준비합니다.',pages:[['servers','SSH 접속 대상'],['tailscale','Tailscale·집 WSL']],utilities:[['remote-secrets','인증 참조 모아보기'],['remote-sessions','공통 키·세션 정책']]},
+ {id:'git',title:'Git',icon:'git',start:'connections',intro:'서버별로 clone·pull·push에 사용할 접속 방식과 인증을 설정합니다. 커밋 작성자와 폴더 규칙도 따로 관리할 수 있습니다.',pages:[['connections','원격 저장소 접근'],['profiles','커밋 작성자·적용 규칙 · 선택']],utilities:[['secrets','인증정보 참조 관리'],['sessions','SSH 키·세션 정책']]},
+ {id:'remote',title:'원격 접속',icon:'globe',start:'servers',intro:'터미널로 접속할 컴퓨터를 등록하고 SSH와 필요한 네트워크 연결을 준비합니다.',pages:[['servers','SSH 접속 대상'],['tailscale','Tailscale·집 WSL']],utilities:[['remote-secrets','인증정보 참조 관리'],['remote-sessions','SSH 키·세션 정책']]},
  {id:'runtime',title:'프로젝트 실행 환경',icon:'code',start:'runtime',intro:environmentViews.runtime[1],pages:[['runtime','프로젝트 실행 환경']]},
  {id:'services',title:'외부 서비스',icon:'link',start:'services',intro:environmentViews.services[1],pages:[['services','외부 서비스']]}
 ];
-Object.assign(labels,{existing:'기존 설정 가져오기',overview:'환경 현황',plan:'변경 검토·적용',setup:'처음 설정',agents:'AI 도구·스킬',servers:'SSH 접속 대상','remote-secrets':'인증 참조','remote-sessions':'키·세션',runtime:'프로젝트 실행 환경',services:'외부 서비스',tools:'프로그램 설치',appearance:'터미널·셸·테마',profiles:'작성자·적용 규칙',connections:'Git 호스트 연결',secrets:'인증 참조',sessions:'키·세션'});
+Object.assign(labels,{existing:'기존 설정 가져오기',overview:'환경 현황',plan:'변경 검토·적용',setup:'처음 설정',agents:'AI 도구·스킬',servers:'SSH 접속 대상','remote-secrets':'인증정보 참조 관리','remote-sessions':'SSH 키·세션 정책',runtime:'프로젝트 실행 환경',services:'외부 서비스',tools:'프로그램 설치',appearance:'터미널·셸·테마',profiles:'커밋 작성자·적용 규칙',connections:'원격 저장소 접근',secrets:'인증정보 참조 관리',sessions:'SSH 키·세션 정책'});
 function domainFor(page){return domains.find(domain=>[...domain.pages,...(domain.utilities||[])].some(([id])=>id===page));}
 function primaryButton(title,id,icon){const item=button(title,()=>navigate(id,{primary:true}));item.dataset.view=id;item.setAttribute('aria-label',title);item.disabled=!draft;if(icon)item.insertAdjacentHTML('afterbegin',svg[icon]);return item;}
 function buildNavigation(){
@@ -40,7 +40,7 @@ function attachDomainNavigation(){
   for(const [id,title] of domain.pages){const item=button(title,()=>navigate(id),id===view?'btn active':'btn');if(id===view)item.setAttribute('aria-current','page');tabs.append(item)}
   if(domain.utilities){
    const extra=el('details',undefined,'domain-utilities');extra.id='domain-utilities';extra.open=domain.utilities.some(([id])=>id===view);
-   extra.append(el('summary','필요할 때 · 공통 인증·키 설정'),el('p','인증 참조와 키 수명은 연결 상세에서도 설정할 수 있습니다. 이 메뉴는 공통 설정을 모아보는 곳이며 처음 설정의 별도 단계가 아닙니다.','hint'));
+   extra.append(el('summary','고급 설정'),el('p','인증 참조와 키 수명은 연결 상세에서도 설정할 수 있습니다. 이 메뉴는 공통 설정을 모아보는 곳이며 처음 설정의 별도 단계가 아닙니다.','hint'));
    for(const [id,title] of domain.utilities)extra.append(button(title,()=>navigate(id),id===view?'btn active':'btn'));
    tabs.append(extra);
   }

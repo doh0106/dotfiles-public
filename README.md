@@ -113,7 +113,7 @@ GitHub Enterprise와 GitLab Self-Managed도 호스트를 지정한다. SSH 접�
 | 변경 검토·적용 | 직접 관리 설정의 검토·저장, 적용 방법, 실행 확인 |
 | 처음 설정 | 설정 순서 안내와 단계별 진행 기록 |
 | 앱·도구 | 프로그램 선택·설치 안내, 터미널·셸·테마, AI 도구·Agent Kit 스킬 안내 |
-| Git | Git 호스트 연결, 폴더별 작성자, 공통 인증 참조·키 세션 |
+| Git | 원격 저장소 접근, 폴더별 작성자, 공통 인증 참조·키 세션 |
 | 원격 접속 | SSH 접속 대상, Tailscale·집 WSL 준비, 공통 인증 참조·키 세션 |
 | 프로젝트 실행 환경 | 선택한 프로젝트의 Dev Container 구성·상태 조회, 실행·접속·중지 명령 안내 |
 | 외부 서비스 | Jira·Confluence·Google의 계정 연결·인증·사용 설정 창 |
@@ -135,8 +135,8 @@ AI 스킬 설치 상태는 자동 관측하지 않으며 Agent Kit의 도구별 
 
 1. **앱·도구 → 터미널·셸·테마**에서 원하는 구성을 고른다.
 2. **앱·도구 → 프로그램 설치**에서 필요한 도구를 선택한다.
-3. **Git → Git 호스트 연결**에서 접속 방식과 인증 참조를 정한다. 프로필 없이 사용할 수 있다.
-4. 필요하면 **Git → 작성자·적용 규칙**에서 폴더를 만들고 앞서 등록한 연결을 지정한다. 커밋 작성자도 함께 정할 수 있다.
+3. **Git → 원격 저장소 접근**에서 접속 방식과 인증 참조를 정한다. 프로필 없이 사용할 수 있다.
+4. 필요하면 **Git → 커밋 작성자·적용 규칙**에서 폴더를 만들고 앞서 등록한 연결을 지정한다. 커밋 작성자도 함께 정할 수 있다.
 5. **변경 검토·적용**에서 초안을 검토하고 설정 파일을 저장한다.
 6. 같은 화면에서 저장한 설정의 적용 명령을 실행하고 확인 기록을 남긴다.
 
@@ -206,7 +206,7 @@ python3 bin/dashboard.py plan  # 화면 없이 저장된 설정의 적용 안내
 | 서비스 도구 | AWS CLI, ngrok | CLI만 설치. 계정 인증·토큰 등록·터널 시작은 별도 |
 
 Oh My Zsh는 셸과 테마 화면에서 선택한다. 없으면 선택한 경로에 설치하는 안내가 나온다.
-GitHub·GitLab CLI는 Git 호스트 연결의 추가 기능 선택을 따른다. Git만 쓰면 설치할 필요가 없다.
+GitHub·GitLab CLI는 원격 저장소 접근의 추가 기능 선택을 따른다. Git만 쓰면 설치할 필요가 없다.
 외부 패키지 저장소가 필요한 CLI는 공식 설치 문서 링크를 제공한다.
 
 nvm을 선택하면 설치 안내가 nvm → 선택한 Node 버전 → Gemini 순서로 나온다.
@@ -295,6 +295,7 @@ Git·SSH Include와 shell.zsh를 읽으며, 연결 해제는 `~/.config/dotfiles
 ```sh
 python3 tests/smoke.py
 python3 tests/dashboard.py
+node tests/dashboard-ui.js
 python3 tests/runbook.py
 python3 tests/tools.py
 python3 tests/desktop.py

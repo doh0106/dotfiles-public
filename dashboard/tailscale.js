@@ -24,7 +24,7 @@ function renderTailscale(){
  const settings=groupBox('먼저 · 비공개 접속 대상 준비',root);if(tsData.error)settings.append(el('p',tsData.error,'notice'));
  settings.append(el('p','집 WSL 주소·Linux 사용자·같은 Tailscale 신원·신뢰할 공개 지문을 준비합니다. 토큰이나 개인키는 입력하지 않습니다.','tool-state'));
  const importer=el('details',undefined,'runbook-block');importer.append(el('summary','기존 비공개 dotfiles 설정 불러오기'));
- const repo=field(importer,'비공개 저장소 로컬 절대 경로','',null,null,'tailscale-private-repository');repo.placeholder='~/personal/dotfiles-private';
+ const repo=field(importer,'비공개 저장소 로컬 절대 경로','',null,null,'tailscale-private-repository');repo.placeholder='예: ~/personal/dotfiles-private';
  const ref=field(importer,'읽을 Git ref','origin/main',[['origin/main','origin/main · 마지막 fetch 기준'],['HEAD','현재 로컬 커밋']],null,'tailscale-private-ref');
  const importButton=button('비공개 설정 불러오기',()=>tsAction(async()=>{const result=await tsRequest({action:'import',repository:repo.value,ref:ref.value});tsDraft={...result.target,client:tsDraft.client};tsSource=result.source;toast('선택한 커밋의 설정을 불러왔습니다. 검토한 뒤 저장하세요.')}));importButton.disabled=snapshot.design_preview;importer.append(importButton,el('p','로컬 Git의 정해진 WSL 설정 파일만 읽습니다. fetch·로그인·정책 적용은 실행하지 않습니다. 새 기기에서는 비공개 저장소를 먼저 받아두세요.','hint'));settings.append(importer);
  for(const [key,label] of [['client','설정할 클라이언트 OS'],['alias','SSH 별칭'],['host','집 WSL Tailscale DNS 이름 또는 IPv4'],['user','집 WSL Linux 사용자'],['account','호스트를 등록한 Tailscale 로그인 신원']]){
@@ -32,7 +32,7 @@ function renderTailscale(){
   const input=field(settings,label,tsDraft[key],key==='client'?[['macos','macOS'],['windows','Windows 네이티브 · PowerShell'],['linux','Linux / WSL']]:null,update,'tailscale-'+key);
   if(key!=='client')input.addEventListener('input',()=>update(input.value));
  }
- const fingerprintLabel=el('label','신뢰하는 공개 호스트 지문 · SHA256:값, 한 줄에 하나씩'),fingerprints=el('textarea');fingerprints.id='tailscale-fingerprints';fingerprintLabel.htmlFor=fingerprints.id;fingerprints.value=tsDraft.fingerprints;fingerprints.rows=4;fingerprints.addEventListener('input',()=>{tsDraft.fingerprints=fingerprints.value;tsSource=null;tsDraftChanged()});settings.append(fingerprintLabel,fingerprints);
+ const fingerprintLabel=el('label','신뢰하는 공개 호스트 지문 · SHA256:값, 한 줄에 하나씩'),fingerprints=el('textarea');fingerprints.id='tailscale-fingerprints';fingerprints.placeholder='SHA256:공개_호스트_키의_지문';fingerprintLabel.htmlFor=fingerprints.id;fingerprints.value=tsDraft.fingerprints;fingerprints.rows=4;fingerprints.addEventListener('input',()=>{tsDraft.fingerprints=fingerprints.value;tsSource=null;tsDraftChanged()});settings.append(fingerprintLabel,fingerprints);
  const dirty=el('p','접속 대상이 미저장 상태입니다. 저장 후 단계 확인을 기록할 수 있습니다.','hint');dirty.id='tailscale-unsaved';dirty.hidden=Boolean(saved);settings.append(dirty);
  const saveButton=button('접속 설정 저장 · SSH 별칭 파일 생성',()=>tsAction(async()=>{tsData=await tsRequest({action:'save',target:tsDraft,source:tsSource,revision:tsData.revision});tsDraft=clone(tsData.target);tsSource=tsData.source;tsObservation=null;toast('전용 설정과 SSH 별칭 파일을 저장했습니다. 이미 Include를 적용했다면 새 별칭 내용이 반영됩니다. 로그인은 실행하지 않았습니다.')}),'btn primary');saveButton.disabled=snapshot.design_preview;settings.append(saveButton);
  if(tsSource)settings.append(el('p','비공개 출처: '+tsSource.ref+' · '+tsSource.commit.slice(0,12)+' · '+tsSource.imported_at+' (저장된 기록이며 현재 호스트 검증 아님)','hint'));

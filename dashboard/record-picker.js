@@ -18,7 +18,7 @@ function recordChoiceField(parent,label,value,getRecords,onchange,id,noneTitle){
  select.hidden=true;select.tabIndex=-1;
  const wrap=select.parentElement,card=el('div',undefined,'record-current'),summary=el('div',undefined,'record-current-summary');
  const choose=button('선택·변경',()=>openRecordPicker(label,getRecords(),select.value,noneTitle,selected=>{select.value=selected;select.dispatchEvent(new Event('change',{bubbles:true}))},choose.id));
- choose.id=id+'-picker';choose.setAttribute('aria-label',label+' 선택·변경');choose.setAttribute('aria-haspopup','dialog');wrap.querySelector('label').htmlFor=choose.id;
+ choose.id=id+'-picker';choose.setAttribute('aria-label',label+' 선택·변경');choose.setAttribute('aria-haspopup','dialog');wrap.querySelector('label').htmlFor=choose.id;const help=select.getAttribute('aria-describedby');if(help)choose.setAttribute('aria-describedby',help);
  card.append(summary,choose);wrap.insertBefore(card,select);
  const binding={card,summary,getRecords,getValue:()=>select.value,noneTitle,attached:false};recordFields.add(binding);refreshRecordFields();
  queueMicrotask(()=>{if(card.isConnected)binding.attached=true;else recordFields.delete(binding)});return select;

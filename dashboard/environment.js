@@ -34,7 +34,7 @@ function renderEnvironment(observation=snapshot.shared_environment){
  const runtime=groupBox('Dev Container 상태',root);
  if(state.availability!=='available')runtime.append(el('p','개발 환경 상태를 읽을 공통 모듈이 준비되지 않았습니다. 설치·연결 안내를 확인하세요.','tool-state'));
  const row=el('div',undefined,'field'),label=el('label','프로젝트 절대 경로'),input=el('input');
- input.id='environment-workspace';input.type='text';label.htmlFor=input.id;input.placeholder='/path/to/project';input.value=state.environment?.workspace||'';row.append(label,input);runtime.append(row);
+ input.id='environment-workspace';input.type='text';label.htmlFor=input.id;input.placeholder='예: /Users/me/projects/my-app';input.value=state.environment?.workspace||'';row.append(label,input);runtime.append(row);decorateField(input,'프로젝트 절대 경로');
  runtime.append(button('선택한 프로젝트 상태 확인',async()=>{try{const updated=await environmentRequest({action:'observe',workspace:input.value});snapshot.shared_environment=updated;renderEnvironment(updated)}catch(error){toast(error.message)}}));
  const result=state.environment||{};
  const configurationLabels={configured:'설정됨',not_selected:'프로젝트 미선택',workspace_missing:'폴더 없음',not_configured:'프로젝트 설정 없음'};
