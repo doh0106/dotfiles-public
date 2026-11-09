@@ -5,11 +5,11 @@ const domains=[
  {id:'apps',title:'앱·도구',icon:'shell',start:'appearance',intro:'필요한 프로그램을 준비하고 터미널·셸과 AI 작업 도구를 설정합니다.',pages:[['appearance','터미널·셸·테마'],['tools','프로그램 설치'],['agents','AI 도구·스킬']]},
  {id:'git',title:'Git',icon:'git',start:'connections',intro:'서버별로 clone·pull·push에 사용할 접속 방식과 인증을 설정합니다. 커밋 작성자와 폴더 규칙도 따로 관리할 수 있습니다.',pages:[['connections','원격 저장소 접근'],['profiles','커밋 작성자·적용 규칙 · 선택']]},
  {id:'remote',title:'원격 접속',icon:'globe',start:'servers',intro:'터미널로 접속할 컴퓨터를 등록하고 SSH와 필요한 네트워크 연결을 준비합니다.',pages:[['servers','SSH 접속 대상'],['key-supply','SSH agent'],['tailscale','Tailscale·집 WSL']]},
- {id:'credentials',title:'비밀 관리',icon:'key',start:'providers',intro:'Bitwarden 연결과 등록된 값의 공급을 관리합니다. 보관 항목의 생성·편집은 Bitwarden에서, SSH agent는 원격 접속에서 관리합니다.',pages:[['providers','Bitwarden 연결 설정'],['secret-tokens','환경변수 공급']]},
+ {id:'credentials',title:'비밀 관리',icon:'key',start:'providers',intro:'Bitwarden 연결과 등록된 값의 공급을 관리합니다. 보관 항목의 생성·편집은 Bitwarden에서, SSH agent는 원격 접속에서 관리합니다.',pages:[['providers','Bitwarden 연결 설정'],['secret-keys','SSH 키 가져오기·공급'],['secret-tokens','환경변수 공급']]},
  {id:'runtime',title:'프로젝트 실행 환경',icon:'code',start:'runtime',intro:environmentViews.runtime[1],pages:[['runtime','프로젝트 실행 환경']]},
  {id:'services',title:'외부 서비스',icon:'link',start:'services',intro:environmentViews.services[1],pages:[['services','외부 서비스']]}
 ];
-Object.assign(labels,{existing:'기존 설정 가져오기',overview:'내 환경',plan:'변경 검토·적용',setup:'처음 설정',agents:'AI 도구·스킬',servers:'SSH 접속 대상','remote-secrets':'인증정보 참조 관리','remote-sessions':'SSH 키·세션 정책',runtime:'프로젝트 실행 환경',services:'외부 서비스',tools:'프로그램 설치',appearance:'터미널·셸·테마',profiles:'커밋 작성자·적용 규칙',connections:'원격 저장소 접근','key-supply':'SSH agent',secrets:'SSH 키 공급','secret-tokens':'환경변수 공급',passwords:'SSH 키 공급',providers:'Bitwarden 연결 설정','secret-links':'공급·연동',sessions:'키·세션 정책'});
+Object.assign(labels,{existing:'기존 설정 가져오기',overview:'내 환경',plan:'변경 검토·적용',setup:'처음 설정',agents:'AI 도구·스킬',servers:'SSH 접속 대상','remote-secrets':'인증정보 참조 관리','remote-sessions':'SSH 키·세션 정책',runtime:'프로젝트 실행 환경',services:'외부 서비스',tools:'프로그램 설치',appearance:'터미널·셸·테마',profiles:'커밋 작성자·적용 규칙',connections:'원격 저장소 접근','key-supply':'SSH agent','secret-keys':'SSH 키 가져오기·공급',secrets:'SSH 키 공급','secret-tokens':'환경변수 공급',passwords:'SSH 키 공급',providers:'Bitwarden 연결 설정','secret-links':'공급·연동',sessions:'키·세션 정책'});
 function domainFor(page){return domains.find(domain=>[...domain.pages,...(domain.utilities||[])].some(([id])=>id===page));}
 function primaryButton(title,id,icon){const item=button(title,()=>navigate(id,{primary:true}));item.dataset.view=id;item.setAttribute('aria-label',title);item.disabled=!draft;if(icon)item.insertAdjacentHTML('afterbegin',svg[icon]);return item;}
 function buildNavigation(){
@@ -30,7 +30,7 @@ function updateLocation(){
  $('breadcrumb').textContent=setupMode&&view!=='setup'?'처음 설정 / '+(step?(setupSteps.indexOf(step)+1)+'. ':'')+labels[view]:domain?'환경 구성 / '+domain.title+(domain.title!==labels[view]?' / '+labels[view]:''):view==='existing'?'환경 현황 / 기존 설정 가져오기':labels[view];
  $('page-title').textContent=labels[view];document.title=labels[view]+' · dotfiles';
  $('overline').textContent=setupMode?'처음 설정 안내':domain?'환경 구성 · '+domain.title:view==='plan'?'변경 관리':view==='existing'?'기존 설정 가져오기':'내 환경';
- $('page-intro').textContent=domain?.intro||({overview:'설치·설정 적용을 진행하고 필요한 인증과 업데이트를 이어갑니다.',setup:'새 컴퓨터에서 설정을 가져오고 설치·인증을 이어가는 순서입니다.',existing:'감지한 설정을 검토하고 원본을 유지하는 참조로 관리 목록에 추가합니다.',plan:'셸·도구·Git·SSH 설정의 변경을 검토·저장하고 적용 방법을 확인합니다. 서비스 로그인과 프로젝트 실행은 각 화면에서 진행합니다.'})[view];
+ $('page-intro').textContent=view==='key-supply'?'준비된 개인키를 등록하고 agent 소켓·키 유지 시간·해제를 관리합니다. 비밀 저장소에 연결할 필요는 없습니다.':view==='secret-keys'?'비밀 저장소에서 SSH 키를 준비해 선택한 agent에 공급합니다. agent 자체의 설정은 원격 접속에서 관리합니다.':domain?.intro||({overview:'설치·설정 적용을 진행하고 필요한 인증과 업데이트를 이어갑니다.',setup:'새 컴퓨터에서 설정을 가져오고 설치·인증을 이어가는 순서입니다.',existing:'감지한 설정을 검토하고 원본을 유지하는 참조로 관리 목록에 추가합니다.',plan:'셸·도구·Git·SSH 설정의 변경을 검토·저장하고 적용 방법을 확인합니다. 서비스 로그인과 프로젝트 실행은 각 화면에서 진행합니다.'})[view];
  const action=({connections:'+ Git 연결 추가',servers:'+ SSH 대상 추가',profiles:'+ 폴더 규칙 추가','remote-secrets':'+ 인증 참조 추가'})[view];$('heading-action').hidden=!action;$('heading-action').textContent=action||'';
 }
 function attachDomainNavigation(){
@@ -60,11 +60,11 @@ function restoreDashboardLocation(){
 function navigate(next,options={}){
  if(!draft)return;
  for(const dialog of all('dialog[open]'))dialog.close();
- if(next==='passwords')next='providers';if(next==='secrets')next='key-supply';
+ if(next==='passwords')next='providers';if(next==='secrets')next='secret-keys';
  if(next==='remote-secrets'||next==='sessions'||next==='remote-sessions')next='key-supply';if(next==='secret-links')next='connections';
  if(next==='environment')next='services';const domain=domains.find(item=>item.id===next);if(domain)next=domain.start;
  if(options.primary)setupMode=false;if(next==='setup')setupMode=true;if(['overview','plan','existing'].includes(next))setupMode=false;
- const renders={overview:renderEnvironmentOverview,setup:renderStartGuide,existing:renderExistingSettings,tools:renderTools,appearance:renderAppearance,agents:renderAgents,connections:renderConnections,servers:renderConnections,profiles:renderProfiles,'key-supply':renderSecrets,secrets:renderSecrets,providers:renderProviders,'secret-tokens':renderSecretTokenWorkflow,'secret-links':renderSecretLinks,sessions:renderSessions,'remote-secrets':renderSecrets,'remote-sessions':renderSessions,services:renderEnvironment,runtime:renderEnvironment,tailscale:renderTailscale,plan:renderPlan};
+ const renders={overview:renderEnvironmentOverview,setup:renderStartGuide,existing:renderExistingSettings,tools:renderTools,appearance:renderAppearance,agents:renderAgents,connections:renderConnections,servers:renderConnections,profiles:renderProfiles,'key-supply':renderAgentManager,'secret-keys':renderSecretSshWorkflow,secrets:renderSecrets,providers:renderProviders,'secret-tokens':renderSecretTokenWorkflow,'secret-links':renderSecretLinks,sessions:renderSessions,'remote-secrets':renderSecrets,'remote-sessions':renderSessions,services:renderEnvironment,runtime:renderEnvironment,tailscale:renderTailscale,plan:renderPlan};
  if(!renders[next])next='overview';const changed=view!==next||location.hash!==routeFor(next);
  if(['connections','servers'].includes(next)&&view!==next){chosen='';search='';}
  view=next;const hash=routeFor(view);if(location.hash!==hash){if(options.history===false||!location.hash)history.replaceState(null,'',hash);else history.pushState(null,'',hash)}

@@ -13,7 +13,7 @@ function button(text,handler,cls='btn'){const n=el('button',text,cls);n.type='bu
 function fieldContract(id){
  const c=current(),active=Boolean(c?.enabled);let required=false,condition='',previous,origin='';
  const map={'connection-name':'name','connection-kind':'kind','host-input':'host','protocol-select':'method','profile-select':'profile','ssh-user':'sshUser','public-key':'publicKey','ssh-alias':'sshAlias','provider-select':'provider'};
- if(id==='vault-master')required=true;
+ if(['vault-master','agent-private-path'].includes(id))required=true;
  if(['connection-name','connection-kind','new-connection-name','new-connection-kind','new-id','session-ttl','key-lifetime'].includes(id))required=true;
  if(['host-input','protocol-select','ssh-user','public-key'].includes(id)){required=active&&(!['ssh-user','public-key'].includes(id)||sshMode(c)==='key');condition='사용 시 필수';}
  if(id==='git-credential'&&c?.method==='ssh'){required=false;condition='선택';}

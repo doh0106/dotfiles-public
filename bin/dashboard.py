@@ -20,6 +20,7 @@ import runbook
 import setup_progress
 import tailscale_setup
 import host_inventory
+import ssh_domain
 import secret_workflow
 import environment_control
 from environment_bridge import bridge
@@ -106,7 +107,7 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         try:
             if path=='/api/state':self.reply(200,snapshot(design_preview=getattr(self.server,'design_preview',False),catalog_url=getattr(self.server,'design_catalog_url',None)))
-            elif path in ('/','/index.html','/app.js','/secret-workflows.js','/control-center.js','/inventory.js','/record-picker.js','/change-center.js','/environment.js','/desktop.js','/style.css','/design/dashboard-design.js','/design/preview.js','/design/preview.css','/onboarding.js','/navigation.js','/tailscale.js','/design/design-inspector.js','/design/design-inspector.css'):
+            elif path in ('/','/index.html','/app.js','/secret-workflows.js','/ssh-agent.js','/control-center.js','/inventory.js','/record-picker.js','/change-center.js','/environment.js','/desktop.js','/style.css','/design/dashboard-design.js','/design/preview.js','/design/preview.css','/onboarding.js','/navigation.js','/tailscale.js','/design/design-inspector.js','/design/design-inspector.css'):
                 file=REPO/'dashboard'/('index.html' if path in ('/','/index.html') else path[1:]);self.reply(200,file.read_bytes(),{'html':'text/html','js':'application/javascript','css':'text/css'}[file.suffix[1:]]+'; charset=utf-8')
             else:self.reply(404,{'error':'찾을 수 없습니다.'})
         except (ValueError,OSError,KeyError,TypeError) as exc:self.reply(400,{'error':'설정 읽기 실패: '+str(exc)})
@@ -147,6 +148,25 @@ class Handler(BaseHTTPRequestHandler):
                 else:raise ValueError('지원하지 않는 환경 요청')
                 self.reply(200,result)
             except (ValueError,OSError,TypeError,KeyError,subprocess.TimeoutExpired):self.reply(400,{'error':'환경 작업을 시작하지 못했습니다. 저장된 설정·진행 중 작업·연결을 확인하세요.'})
+            return
+        if self.path=='/api/ssh-agent':
+            try:
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=8192:raise ValueError('agent 요청 크기 오류')
+                request=json.loads(self.rfile.read(size))
+                if not isinstance(request,dict):raise ValueError('agent 요청 형식 오류')
+                with secret_workflow.CREATION_LOCK:
+                    agent=getattr(self.server,'ssh_agent_domain',None)
+                    if agent is None:agent=self.server.ssh_agent_domain=ssh_domain.SSHDomain()
+                action=request.get('action')
+                if request=={'action':'status'}:result=agent.status()
+                elif action=='register_file' and set(request)=={'action','path','lifetime'}:
+                    result=agent.register_file(request['path'],request['lifetime']);result.pop('added_keys',None)
+                elif action=='set_agent' and set(request)=={'action','socket'}:result=agent.set_agent(request['socket'])
+                elif request=={'action':'cleanup'}:result=agent.cleanup()
+                else:raise ValueError('지원하지 않는 agent 요청')
+                self.reply(200,result)
+            except (ValueError,RuntimeError,OSError,TypeError,KeyError,subprocess.TimeoutExpired):self.reply(400,{'error':'agent 작업을 완료하지 못했습니다. 소켓·개인키 경로·파일 권한을 확인하세요.'})
             return
         if self.path in ('/api/secrets','/api/secret-session'):
             try:

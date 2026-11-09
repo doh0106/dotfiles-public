@@ -1,8 +1,7 @@
-"""UI-owned SSH supply domain. Only public metadata is persisted; BW remains a value adapter."""
+"""Provider-independent SSH agent registration and lifecycle. Public metadata only."""
 import contextlib,fcntl,json,os,stat,subprocess,time
 from pathlib import Path
 import configuration as cfg
-import legacy_secrets
 import auth
 
 class SSHDomain:
@@ -20,7 +19,7 @@ class SSHDomain:
             state=json.loads(self.path.read_text())
             if not isinstance(state,dict) or state.get('schema')!=1:raise ValueError('공유 SSH 상태 형식 오류')
             return state
-        except FileNotFoundError:return dict(schema=1,socket='',preference='',added={},last_supply=None,sync_before_fetch=True,generations={},manifest='')
+        except FileNotFoundError:return dict(schema=1,socket='',preference='',added={},last_registration=None,generations={})
     @contextlib.contextmanager
     def transaction(self):
         if cfg.DATA.is_symlink():raise ValueError('관리 폴더 링크를 확인하세요.')
@@ -30,19 +29,8 @@ class SSHDomain:
         with os.fdopen(descriptor,'a+') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX);yield
     def write(self,state):cfg.atomic(self.path,(json.dumps(state,ensure_ascii=False)+'\n').encode())
-    def registrations(self,manifest=None):
-        rows={}
-        for row in legacy_secrets.registrations(manifest or self.read().get('manifest'))['items']:rows[(row['item'],row['kind'])]=dict(row)
-        state=cfg.read_settings()[0]
-        for ref in state['credentials']:
-            used=any(c['method']=='ssh' and c['credential']==ref['id'] for c in state['connections'])
-            if ref['source']!='bitwarden' or ref['kind'] not in ('note','sshkey') or not ref['item'] or not (ref.get('purpose')=='ssh-key' or not ref.get('purpose') and used):continue
-            key=(ref['item'],ref['kind'])
-            if key not in rows:rows[key]=dict(id=ref['id'],item=ref['item'],name=ref['item'],kind=ref['kind'],purpose='ssh-key',sources=[])
-            rows[key]['sources']=list(dict.fromkeys(rows[key]['sources']+[str(cfg.SETTINGS)]))
-        return list(rows.values())
     def environment(self,socket):
-        env={k:v for k,v in os.environ.items() if not (k.startswith('BW_') or k=='DOTFILES_VAULT_PASSWORD' or k.endswith('_TOKEN'))}
+        env={k:v for k,v in os.environ.items() if k in ('HOME','PATH','TMPDIR','TMP','TEMP','LANG','LC_ALL','LC_CTYPE','SSH_AUTH_SOCK','SSH_AGENT_PID')}
         if socket:env['SSH_AUTH_SOCK']=socket
         return env
     def reachable(self,socket):
@@ -90,35 +78,26 @@ class SSHDomain:
     def agent(self):
         with self.transaction():
             state=self.read();env=self.choose_agent(state);self.write(state);return env
-    def set_manifest(self,path):
-        if not isinstance(path,str):raise ValueError('등록 목록 경로 형식 오류')
-        if path:
-            target=Path(path).expanduser().resolve();info=target.stat()
-            if not target.is_relative_to(Path.home().resolve()) or not stat.S_ISREG(info.st_mode) or info.st_uid!=os.getuid() or info.st_size>262144:raise ValueError('홈 안의 등록 목록 파일을 선택하세요.')
-            result=legacy_secrets.registrations(str(target))
-            if result['warnings'] and not result['items']:raise ValueError('SSH 등록 목록을 읽지 못했습니다.')
-            path=str(target)
-        with self.transaction():
-            state=self.read();state['manifest']=path;self.write(state)
-        return self.status()
-    def set_sync(self,enabled):
-        if type(enabled) is not bool:raise ValueError('동기화 옵션 형식 오류')
-        with self.transaction():
-            state=self.read();state['sync_before_fetch']=enabled;self.write(state)
-        return self.status()
     def generation(self,socket):
         info=Path(socket).stat();return [info.st_dev,info.st_ino]
     def status(self):
         state=self.read();socket=state.get('socket') or os.environ.get('SSH_AUTH_SOCK','');reachable=self.reachable(socket)
         current=auth.keys(lambda args,**kw:self.run(args,env=self.environment(socket),**kw)) if reachable else set()
-        return dict(agent_socket=socket,preference=state.get('preference',''),agent_ready=reachable,key_count=len(current),managed_keys=sum(public in current and deadline>time.time() for public,deadline in state.get('added',{}).get(socket,{}).items()),last_supply=state.get('last_supply'),sync_before_fetch=state.get('sync_before_fetch',True),manifest=state.get('manifest',''),inherited_socket=os.environ.get('SSH_AUTH_SOCK',''),dedicated_socket=str(cfg.DATA/'agent/agent.sock'))
-    def supply(self,rows,lifetime,fetcher,socket=None,syncer=None,sync=None):
+        import base64,hashlib
+        managed=state.get('added',{}).get(socket,{}) if reachable and state.get('generations',{}).get(socket)==self.generation(socket) else {}
+        identities=[]
+        for public in sorted(current):
+            try:
+                kind,blob=public.split()[:2];fingerprint='SHA256:'+base64.b64encode(hashlib.sha256(base64.b64decode(blob,validate=True)).digest()).decode().rstrip('=')
+                deadline=managed.get(public);owned=deadline is not None and deadline>time.time()
+                identities.append(dict(type=kind,fingerprint=fingerprint,managed=owned,expires_in=max(0,int(deadline-time.time())) if owned else None))
+            except (ValueError,TypeError):continue
+        return dict(keys=identities,agent_socket=socket,preference=state.get('preference',''),agent_ready=reachable,key_count=len(current),managed_keys=sum(row['managed'] for row in identities),last_registration=state.get('last_registration'),inherited_socket=os.environ.get('SSH_AUTH_SOCK',''),dedicated_socket=str(cfg.DATA/'agent/agent.sock'))
+    def register_materials(self,rows,lifetime,socket=None):
         if type(lifetime) is not int or not 60<=lifetime<=86400:raise ValueError('키 유지 시간은 60~86400초입니다.')
         if not rows:raise ValueError('공급할 등록 키가 없습니다.')
         with self.transaction():
             state=self.read()
-            if sync is not None and type(sync) is not bool:raise ValueError('동기화 옵션 형식 오류')
-            if (state.get('sync_before_fetch',True) if sync is None else sync) and syncer is not None and syncer().returncode:raise ValueError('Bitwarden 동기화에 실패했습니다. 키는 변경하지 않았습니다.')
             env=self.choose_agent(state,socket);results=[];new=[]
             if socket is not None:state['preference']=socket
             generation=self.generation(env['SSH_AUTH_SOCK'])
@@ -127,13 +106,24 @@ class SSHDomain:
             runner=lambda args,**kw:self.run(args,env=env,**kw)
             for row in rows:
                 try:
-                    added=auth.add(row['item'],row['kind'],lifetime,row.get('publicKey'),runner=runner,fetcher=fetcher)
+                    added=auth.add(row['name'],'prepared',lifetime,row.get('publicKey'),runner=runner,fetcher=lambda *args,**kw:row['material'])
                     for key in added:state['added'].setdefault(env['SSH_AUTH_SOCK'],{})[key]=time.time()+lifetime;new.append(key)
-                    results.append(dict(item=row['item'],kind=row['kind'],state='added' if added else 'reused'))
-                except (ValueError,RuntimeError,OSError):results.append(dict(item=row['item'],kind=row['kind'],state='failed',message='항목·Bitwarden 연결·공개키를 확인하세요.'))
+                    results.append(dict(name=row['name'],state='added' if added else 'reused'))
+                except (ValueError,RuntimeError,OSError):results.append(dict(name=row['name'],state='failed',message='준비한 개인키·공개키와 agent를 확인하세요.'))
                 self.write(state) # Preserve earlier successes if a later key fails or the process exits.
-            state['last_supply']=dict(results=results,agent_socket=env['SSH_AUTH_SOCK'],dedicated_agent=env['SSH_AUTH_SOCK']==str(cfg.DATA/'agent/agent.sock'));self.write(state)
-            return dict(state['last_supply'],added_keys=new)
+            state['last_registration']=dict(results=results,agent_socket=env['SSH_AUTH_SOCK'],dedicated_agent=env['SSH_AUTH_SOCK']==str(cfg.DATA/'agent/agent.sock'));self.write(state)
+            return dict(state['last_registration'],added_keys=new)
+    def register_file(self,path,lifetime):
+        if not isinstance(path,str) or not path.startswith(('/','~/')):raise ValueError('개인키 파일 경로를 지정하세요.')
+        target=Path(path).expanduser().resolve()
+        if not target.is_relative_to(Path.home().resolve()) or target.suffix=='.pub':raise ValueError('홈 안의 개인키 파일을 선택하세요. 공개키만으로는 등록할 수 없습니다.')
+        descriptor=os.open(target,os.O_RDONLY|getattr(os,'O_NOFOLLOW',0))
+        with os.fdopen(descriptor) as source:
+            info=os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid!=os.getuid() or info.st_mode&0o077 or info.st_size>131072:raise ValueError('개인키 파일 소유자·권한(600/400)·크기를 확인하세요.')
+            material=source.read()
+        try:return self.register_materials([dict(name=target.name,material=material)],lifetime)
+        finally:material=None
     def cleanup(self):
         with self.transaction():
             state=self.read()

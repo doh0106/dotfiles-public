@@ -207,7 +207,7 @@ else:sys.exit(9)
   self.assertNotIn('SENSITIVE',str(error.exception));self.assertIsNone(self.workflow.session)
  def test_ui_backend_survives_reopening_without_cli_or_reentering_registry(self):
   manifest=self.home/'secrets.json';manifest.write_text(json.dumps(dict(secrets=[dict(bw_name='key-1234',bw_type='sshkey',action='ssh-add')])))
-  self.connect();self.workflow.ssh.set_manifest(str(manifest));first=self.workflow.supply_all(60);before=json.loads((cfg.DATA/'ssh-supply.json').read_text())['added'];self.workflow.close()
+  self.connect();self.workflow.key_source.set_manifest(str(manifest));first=self.workflow.supply_all(60);before=json.loads((cfg.DATA/'ssh-supply.json').read_text())['added'];self.workflow.close()
   replacement=flow.Workflow('http://127.0.0.1:12345')
   try:
    self.assertEqual(replacement.status()['shared_agent']['agent_socket'],first['agent_socket']);self.assertEqual(len(replacement.registered_keys()),1)
@@ -224,6 +224,40 @@ else:sys.exit(9)
    self.assertEqual(subprocess.run(['ssh-add','-l'],env=env,capture_output=True).returncode,0,'pre-existing key on the other socket must remain')
    self.assertEqual(subprocess.run(['ssh-add','-l'],env=dict(env,SSH_AUTH_SOCK=supplied['agent_socket']),capture_output=True).returncode,1)
   finally:subprocess.run(['ssh-agent','-k'],env=env,capture_output=True)
+ def test_agent_registers_a_prepared_local_file_with_no_vault_calls(self):
+  from ssh_domain import SSHDomain
+  def agent_run(args,**kw):
+   self.assertNotEqual(args[0],'bw','agent must not invoke the secret provider');return subprocess.run(args,capture_output=True,text=True,timeout=10,**kw)
+  agent=SSHDomain(agent_run)
+  try:
+   with patch('secret_store.read_bitwarden',side_effect=AssertionError('agent must not read vault')):
+    result=agent.register_file(str(self.home/'fixture'),60);self.assertEqual(result['results'][0]['state'],'added');self.assertEqual(agent.status()['key_count'],1)
+   data=json.dumps(agent.read());self.assertNotIn('PRIVATE KEY',data);self.assertNotIn('fixture-vault',data)
+   with self.assertRaises(ValueError):agent.register_file(str(self.home/'fixture.pub'),60)
+   (self.home/'fixture').chmod(0o644)
+   with self.assertRaises(ValueError):agent.register_file(str(self.home/'fixture'),60)
+  finally:agent.cleanup();agent.close_empty_owned()
+ def test_agent_http_registration_does_not_create_a_vault_broker(self):
+  from ssh_domain import SSHDomain
+  def run(args,**kw):
+   self.assertNotEqual(args[0],'bw');return subprocess.run(args,capture_output=True,text=True,timeout=10,**kw)
+  server=ThreadingHTTPServer(('127.0.0.1',0),dashboard.Handler);server.ssh_agent_domain=SSHDomain(run);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start();origin='http://127.0.0.1:'+str(server.server_port)
+  def request(body):
+   req=urllib.request.Request(origin+'/api/ssh-agent',data=json.dumps(body).encode(),headers={'Origin':origin,'Content-Type':'application/json'})
+   with urllib.request.urlopen(req) as response:return json.load(response)
+  try:
+   result=request(dict(action='register_file',path=str(self.home/'fixture'),lifetime=60));self.assertEqual(result['results'][0]['state'],'added');self.assertFalse(hasattr(server,'secret_workflow'));self.assertEqual(request(dict(action='status'))['key_count'],1);self.assertNotIn('PRIVATE KEY',json.dumps(result));request(dict(action='cleanup'))
+  finally:server.ssh_agent_domain.cleanup();server.ssh_agent_domain.close_empty_owned();server.shutdown();server.server_close();thread.join()
+ def test_secret_source_passes_prepared_material_through_the_agent_port(self):
+  from secret_key_supply import SecretKeySupply
+  calls=[]
+  class AgentPort:
+   def read(self):return {}
+   def register_materials(port,rows,lifetime):
+    calls.append((rows[0]['name'],rows[0]['material']==self.private,lifetime));return dict(results=[dict(name=rows[0]['name'],state='added')],added_keys=['public-fixture'])
+   def status(port):return dict(agent_socket='/fixture/agent.sock',dedicated_socket='/fixture/dedicated.sock')
+  self.connect();source=SecretKeySupply(AgentPort(),self.workflow.vault_run);result=source.supply([dict(item='key-1234',kind='sshkey')],60)
+  self.assertEqual(calls,[('key-1234',True,60)]);self.assertEqual(result['results'][0]['state'],'added');self.assertNotIn('PRIVATE KEY',source.path.read_text())
  def test_terminal_handoff_keeps_passwords_and_session_out_of_output(self):
   import secret_session,io,contextlib
   handoff=self.workflow.connect();request=Path(self.workflow.launch_dir.name)/'request.json'

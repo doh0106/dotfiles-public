@@ -27,9 +27,11 @@ with tempfile.TemporaryDirectory(prefix='dotfiles-dashboard-') as temporary:
         data=request('api/state');state=data['state'];assert state['schema']==3
         assert state['connections']==[] and all(not v['enabled'] for v in state['features'].values())
         assert not (home/'.config/dotfiles').exists(),'GET must not install or persist settings'
+        agent=request('api/ssh-agent',{'action':'status'});assert 'key_count' in agent;assert 'connected' not in agent
+        rejected('api/ssh-agent',{'action':'status'},origin_header='http://evil.invalid')
         control=request('api/control',{'action':'status'});assert not control['busy'];assert not (home/'.config/dotfiles').exists()
         rejected('api/control',{'action':'status'},origin_header='http://evil.invalid')
-        for asset in ('','app.js','secret-workflows.js','control-center.js','style.css','navigation.js','inventory.js','record-picker.js','change-center.js','onboarding.js','environment.js','tailscale.js'):
+        for asset in ('','app.js','secret-workflows.js','ssh-agent.js','control-center.js','style.css','navigation.js','inventory.js','record-picker.js','change-center.js','onboarding.js','environment.js','tailscale.js'):
             with urllib.request.urlopen(url+asset) as response:assert response.status==200
         state['git']['enabled']=True;state['profiles'][0].update(path=str(home/'개인 space'),author='Example',email='example@example.org')
         state['features']['zellij']['enabled']=True;state['features']['zellij']['values']['session']='example'

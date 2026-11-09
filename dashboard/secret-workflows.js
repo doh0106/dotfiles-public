@@ -2,7 +2,7 @@
 // Browser state contains metadata and public keys only; vault sessions stay in the broker.
 const secretFlow={status:null,statusAttempted:false,busy:false,error:'',handoff:null,key:null,token:null,deliveryVariable:'SERVICE_TOKEN',programReference:'',searches:{'ssh-key':{query:'',items:[]},token:{query:'',items:[]}}};
 async function workflowRequest(request){const response=await fetch('/api/secrets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});const data=await response.json();if(!response.ok)throw Error(data.error);return data;}
-function renderSecretFlow(){if(view==='key-supply')renderSecretSshWorkflow();else if(view==='secret-tokens')renderSecretTokenWorkflow();else if(view==='providers')renderBitwardenSettings();else if(view==='overview')renderControlCenter();attachDomainNavigation();}
+function renderSecretFlow(){if(view==='secret-keys')renderSecretSshWorkflow();else if(view==='secret-tokens')renderSecretTokenWorkflow();else if(view==='providers')renderBitwardenSettings();else if(view==='overview')renderControlCenter();attachDomainNavigation();}
 async function flowAction(request,done=()=>{}){
  if(secretFlow.busy)return;secretFlow.busy=true;secretFlow.error='';renderSecretFlow();
  try{const previous=secretFlow.status?.generation,result=await workflowRequest(request);done(result);secretFlow.status=request.action==='status'?result:await workflowRequest({action:'status'});if(previous&&previous!==secretFlow.status.generation){secretFlow.key=null;secretFlow.token=null;for(const search of Object.values(secretFlow.searches))search.items=[]}}
@@ -69,20 +69,17 @@ function renderSecretSshWorkflow(){
  const box=groupBox('등록된 SSH 키 한 번에 공급',main),rows=secretFlow.status?.registered_keys||[];
  box.append(el('p','등록된 키를 Bitwarden에서 가져와 SSH agent에 공급합니다. 예전에 등록한 목록도 그대로 불러오며 터미널 명령은 필요하지 않습니다.','hint'));
  const options=el('details',undefined,'control-more');options.append(el('summary','공급 옵션'));box.append(options);
- field(options,'새로 공급하는 키 유지 시간 · 초',draft.session.keyLifetime,null,value=>{draft.session.keyLifetime=Number(value);mark()},'key-lifetime','number');
- options.append(el('p','60~86400초. 이미 agent에 있는 같은 키는 재사용하고 기존 유지 시간은 바꾸지 않습니다. 목록·시간의 변경은 변경 검토에서 저장합니다.','hint'));
+ options.append(el('p','agent 키 유지 시간: '+draft.session.keyLifetime+'초 · 기존 키의 수명은 유지합니다.','hint'),button('agent 정책 설정 →',()=>navigate('key-supply'),'quiet'));
  const selected=secretFlow.selectedItems===undefined?rows.map(row=>row.id):secretFlow.selectedItems.filter(id=>rows.some(row=>row.id===id));
  const choices=el('div');options.append(el('p','공급할 키를 선택하세요. 선택은 이번 실행에만 적용하며 원본 목록은 바꾸지 않습니다.','hint'),choices);
  for(const row of rows){const label=el('label',undefined,'control-statusbar'),check=el('input');check.type='checkbox';check.checked=selected.includes(row.id);check.onchange=()=>{secretFlow.selectedItems=check.checked?[...selected,row.id]:selected.filter(id=>id!==row.id);renderSecretFlow()};label.append(check,document.createTextNode(row.name));choices.append(label)}
- const agent=secretFlow.status?.shared_agent;
- if(agent){
-  options.append(el('p','사용할 agent: '+(agent.agent_socket||'아직 선택하지 않음')+' · 현재 키 '+agent.key_count+'개','hint'));
-  field(options,'기존 등록 목록 파일',secretFlow.manifestDraft??agent.manifest,null,value=>{secretFlow.manifestDraft=value},'ssh-source-manifest').placeholder='예: ~/dotfiles/secrets.json · 비우면 자동 감지';
-  options.append(flowButton('등록 목록 경로 저장',()=>({action:'set_manifest',path:secretFlow.manifestDraft??agent.manifest}),()=>{delete secretFlow.manifestDraft}));
-  field(options,'Bitwarden 목록 동기화',String(agent.sync_before_fetch),[['true','가져오기 전 bw sync'],['false','캐시 사용 · 동기화 생략']],value=>flowAction({action:'set_sync',enabled:value==='true'}),'ssh-source-sync');
-  field(options,'사용할 agent 소켓 · 비우면 자동',secretFlow.agentDraft??agent.preference,null,value=>{secretFlow.agentDraft=value},'ssh-shared-socket').placeholder='예: /private/tmp/.../agent.sock';
-  options.append(flowButton('agent 선택 저장',()=>({action:'set_agent',socket:secretFlow.agentDraft??agent.preference}),()=>{delete secretFlow.agentDraft}),flowButton('기존 agent 사용',{action:'set_agent',socket:agent.inherited_socket},()=>{delete secretFlow.agentDraft},!agent.inherited_socket),flowButton('대시보드 agent 사용',{action:'set_agent',socket:agent.dedicated_socket},()=>{delete secretFlow.agentDraft}));
+ const source=secretFlow.status?.key_source;
+ if(source){
+  field(options,'기존 등록 목록 파일',secretFlow.manifestDraft??source.manifest,null,value=>{secretFlow.manifestDraft=value},'ssh-source-manifest').placeholder='예: ~/dotfiles/secrets.json · 비우면 자동 감지';
+  options.append(flowButton('등록 목록 경로 저장',()=>({action:'set_manifest',path:secretFlow.manifestDraft??source.manifest}),()=>{delete secretFlow.manifestDraft}));
+  field(options,'Bitwarden 목록 동기화',String(source.sync_before_fetch),[['true','가져오기 전 bw sync'],['false','캐시 사용 · 동기화 생략']],value=>flowAction({action:'set_sync',enabled:value==='true'}),'ssh-source-sync');
  }
+ box.append(el('p','공급할 agent: '+((agentState.status||secretFlow.status?.shared_agent)?.agent_socket||'등록할 때 기존 agent 또는 대시보드 agent 선택'),'hint'),button('공급 대상 agent 설정 →',()=>navigate('key-supply'),'quiet'));
  const supply=flowButton(selected.length===rows.length?'등록된 키 모두 공급':'선택한 키 공급',()=>selected.length===rows.length?({action:'supply_all',lifetime:draft.session.keyLifetime}):({action:'supply_selected',ids:selected,lifetime:draft.session.keyLifetime}),()=>{},!selected.length||!secretFlow.status?.connected);supply.classList.add('primary');box.append(supply);
 
  const result=secretFlow.status?.last_supply;
@@ -100,7 +97,7 @@ function renderSecretSshWorkflow(){
  if(secretFlow.key){const key=secretFlow.key,details=groupBox('선택한 키',add);details.append(el('strong',key.name),el('p',key.fingerprint,'hint'));
   details.append(button('공급 목록에 추가',()=>{flowReference(key,'ssh-key');mark();renderSecretFlow();toast('공급 목록 초안에 추가했습니다. 변경 검토에서 저장하세요.')},'btn'));
  }
- const cleanup=el('details',undefined,'control-more');cleanup.append(el('summary','작업 종료 · 공급한 키 해제'));root.append(cleanup);cleanup.append(flowButton('대시보드가 공급한 agent 키 해제',{action:'cleanup'}),el('p','대시보드가 agent에 추가한 키만 해제합니다. Bitwarden 원본·공개키 파일·기존 agent 키·SSH 연결 설정은 유지합니다.','hint'));
+ root.append(button('공급한 키 확인·해제 →',()=>navigate('key-supply'),'quiet'));
  renderSecretInventory(root,'ssh-key');
  root.append(el('p','SSH 접속 대상·사용자·공개키 경로·연결별 키 선택은 Git 또는 원격 접속에서 관리합니다.','hint'),button('Git 설정 →',()=>navigate('connections'),'quiet'),button('원격 접속 설정 →',()=>navigate('servers'),'quiet'));
 }

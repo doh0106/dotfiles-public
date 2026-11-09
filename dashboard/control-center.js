@@ -37,7 +37,7 @@ function renderControlCenter(){
  const file=el('input');file.type='file';file.accept='.json,application/json';file.setAttribute('aria-label','다른 컴퓨터의 환경 설정 불러오기');file.onchange=async()=>{try{const input=file.files[0];if(!input||input.size>262144)throw Error('설정 JSON 크기를 확인하세요.');const state=JSON.parse(await input.text());await api('/api/preview',state);draft=state;mark();renderControlCenter();toast('설정을 초안에 불러왔습니다. 경로와 도구를 검토하고 적용하세요.')}catch(error){toast(error.message)}};
  more.append(el('p','다른 컴퓨터에서 내보낸 설정 JSON을 불러오세요. 비밀 값은 포함하지 않습니다. 기기별 폴더 경로는 검토해야 합니다.','hint'),file,button('현재 설정 내보내기',()=>{const exported=portableSettings(draft,secretFlow.status?.registered_keys||[]);const url=URL.createObjectURL(new Blob([JSON.stringify(exported,null,2)],{type:'application/json'})),a=el('a');a.href=url;a.download='dotfiles-settings.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)},'quiet'));
  hero.append(more);main.append(hero);
- const bar=el('div',undefined,'control-statusbar'),refresh=button('↻',loadControl,'quiet');refresh.setAttribute('aria-label','환경·인증 상태 새로고침');bar.append(el('span',secretFlow.status?.connected?'Bitwarden 연결됨':'Bitwarden 연결 필요','hint'),el('span','SSH agent: '+snapshot.auth_status.agent,'hint'),refresh);main.prepend(bar);
+ const bar=el('div',undefined,'control-statusbar'),refresh=button('↻',loadControl,'quiet');refresh.setAttribute('aria-label','환경·인증 상태 새로고침');bar.append(el('span',secretFlow.status?.connected?'Bitwarden 연결됨':'Bitwarden 미연결','hint'),el('span','SSH agent: '+snapshot.auth_status.agent,'hint'),refresh);main.prepend(bar);
  if(controlState.error){const error=el('p',controlState.error,'notice');error.setAttribute('role','alert');attention.prepend(error)}
  if(controlState.job){const job=controlState.job,stale=job.action==='apply'&&(job.revision!==snapshot.revision||diff(baseline,draft).length>0),progress=groupBox('진행 상황',main);progress.append(badge(stale?'이전 설정의 실행 기록':({running:'진행 중',done:'완료',needs_action:'조치 필요',interrupted:'중단됨'})[job.status]||job.status,job.status==='done'?'green':'amber'));
   const steps=el('ol',undefined,'control-steps');for(const step of job.steps){const row=el('li');row.append(el('strong',step.title),el('span',({pending:'대기',running:'진행 중',done:'완료',needs_action:'조치 필요'})[step.state]||step.state,'hint'));steps.append(row)}progress.append(steps,el('p',job.message,'hint'));
@@ -46,9 +46,10 @@ function renderControlCenter(){
  }
  const tasks=el('section',undefined,'control-tasks');attention.append(el('h2','인증·SSH 키'),tasks);
  function task(title,text,action){const row=el('div',undefined,'control-task');const content=el('div');content.append(el('h3',title),el('p',text,'hint'));row.append(content,action);tasks.append(row)}
+ task('SSH agent · 준비된 키 사용','로컬 개인키 등록·소켓·수명·해제는 저장소 연결 없이 사용할 수 있습니다.',button('SSH agent 열기',()=>navigate('key-supply'),'btn'));
  task('Bitwarden 연결','키·값을 새로 가져올 때 연결합니다. 이미 agent에 공급한 키는 별도로 유지됩니다.',button(secretFlow.status?.connected?'연결 설정':'연결하기',()=>navigate('providers'),'btn'));
  const keyButton=button('등록된 SSH 키 모두 공급',supplyFromHome,'btn');keyButton.disabled=!secretFlow.status?.connected||controlState.busy||snapshot.design_preview;
- task('SSH 키 공급',(secretFlow.status?.registered_keys?.length||0)+'개 등록 · 버튼으로 agent에 공급합니다. agent 설정은 원격 접속에서 관리합니다.',keyButton);
+ task('저장소에서 SSH 키 가져오기',(secretFlow.status?.registered_keys?.length||0)+'개 등록 · Bitwarden에서 가져와 준비한 뒤 선택한 agent에 공급합니다.',keyButton);
  if(secretFlow.status?.last_supply){const report=el('ul');for(const row of secretFlow.status.last_supply.results)report.append(el('li',row.item+' · '+({added:'공급 완료',reused:'기존 키 재사용',failed:'공급 실패'})[row.state]));tasks.append(report);if(secretFlow.status.last_supply.dedicated_agent)tasks.append(el('p','별도 agent가 준비됐습니다. 원격 접속 → SSH agent에서 터미널 연결 방법을 확인하세요.','hint'))}
  const optional=el('details',undefined,'control-more control-optional');optional.append(el('summary','필요할 때 추가 · 서비스·프로젝트·원격 접속'));root.append(optional);const optionalTasks=el('section',undefined,'control-tasks');optional.append(optionalTasks);
  function extra(title,text,action){const row=el('div',undefined,'control-task'),content=el('div');content.append(el('h3',title),el('p',text,'hint'));row.append(content,action);optionalTasks.append(row)}
@@ -62,6 +63,6 @@ function renderControlCenter(){
 
 function renderStartGuide(){
  const root=$('page-body');root.replaceChildren();root.append(el('h2','이 컴퓨터에서 시작하기'),el('p','처음 한 번 Git·Python으로 대시보드를 실행한 뒤, 아래 순서로 진행합니다.','hint'));
- const steps=[['환경 선택','다른 컴퓨터의 설정 JSON을 불러오거나 필요한 도구를 고릅니다.','overview','내 환경 열기'],['설치·설정 적용','내 환경에서 선택한 설정 저장·적용을 누릅니다. 설치와 적용의 진행 결과를 확인하세요.','overview','설치·적용하기'],['Bitwarden 연결','이 화면에서 잠금을 해제합니다. 보관 항목의 생성·편집은 Bitwarden에서 합니다.','providers','Bitwarden 연결'],['SSH 키 공급','등록된 키를 agent에 한 번에 공급합니다. 새 키를 다시 등록할 필요가 없습니다.','key-supply','SSH agent 열기'],['필요한 서비스 추가','Jira·Google·프로젝트 실행 환경·원격 접속은 내 환경의 선택 기능에서 이어갑니다.','overview','이어서 설정']];
+ const steps=[['환경 선택','다른 컴퓨터의 설정 JSON을 불러오거나 필요한 도구를 고릅니다.','overview','내 환경 열기'],['설치·설정 적용','내 환경에서 선택한 설정 저장·적용을 누릅니다. 설치와 적용의 진행 결과를 확인하세요.','overview','설치·적용하기'],['Bitwarden 연결','이 화면에서 잠금을 해제합니다. 보관 항목의 생성·편집은 Bitwarden에서 합니다.','providers','Bitwarden 연결'],['저장소의 SSH 키 공급','Bitwarden에서 등록된 키를 가져와 선택한 agent에 공급합니다.','secret-keys','키 가져오기·공급 열기'],['필요한 서비스 추가','Jira·Google·프로젝트 실행 환경·원격 접속은 내 환경의 선택 기능에서 이어갑니다.','overview','이어서 설정']];
  const list=el('ol',undefined,'control-steps');for(const [title,text,target,action] of steps){const row=el('li');row.append(el('h3',title),el('p',text,'hint'),button(action,()=>navigate(target,{primary:true}),'btn'));list.append(row)}root.append(list);
 }
